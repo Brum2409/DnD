@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Campaigns — DND AI</title>
+  <meta name="description" content="Create and manage DND campaigns — multi-scene adventures with AI-generated narration and scene art." />
+  <meta property="og:title"       content="DND AI — Campaign Manager" />
+  <meta property="og:description" content="Create epic campaigns, assign heroes, and let the AI Dungeon Master write your saga." />
+  <meta property="og:type"        content="website" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpolygon points='16,2 30,10 30,22 16,30 2,22 2,10' fill='%230d0d0f' stroke='%23c9a84c' stroke-width='2'/%3E%3Ctext x='16' y='21' text-anchor='middle' font-size='14' fill='%23c9a84c' font-family='serif'%3E20%3C/text%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/components.css" />
+  <link rel="stylesheet" href="css/layout.css" />
+  <style>
+    /* ── Campaign sidebar items ── */
+    .campaign-item {
+      padding: 0.85rem 1rem;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius);
+      cursor: pointer;
+      transition: all var(--transition);
+      background: var(--color-surface-2);
+      position: relative;
+    }
+    .campaign-item:hover  { border-color: var(--color-primary-dark); }
+    .campaign-item.active { border-color: var(--color-primary); background: var(--color-primary-glow); }
+    .campaign-item-title  { font-family: var(--font-display); font-size: 0.92rem; margin-bottom: 0.3rem; }
+    .campaign-item-meta   { font-family: var(--font-ui); font-size: 0.72rem; color: var(--color-text-faint); display: flex; gap: 0.75rem; flex-wrap: wrap; }
+    .campaign-del-btn {
+      position: absolute; top: 0.4rem; right: 0.4rem;
+      background: none; border: none; color: var(--color-text-faint);
+      cursor: pointer; font-size: 0.75rem; padding: 0.2em 0.3em;
+      border-radius: var(--radius); opacity: 0; transition: opacity var(--transition);
+    }
+    .campaign-item:hover .campaign-del-btn { opacity: 1; }
+    .campaign-del-btn:hover { color: var(--color-danger); background: var(--color-danger-glow); }
+
+    /* ── Scene timeline ── */
+    .scene-timeline { display: flex; flex-direction: column; gap: 0.75rem; }
+    .scene-card {
+      display: flex; gap: 0.9rem; align-items: flex-start;
+      padding: 0.85rem; border: 1px solid var(--color-border);
+      border-radius: var(--radius); background: var(--color-surface-2);
+      transition: all var(--transition);
+    }
+    .scene-card.current-scene { border-color: var(--color-primary); box-shadow: 0 0 16px rgba(201,168,76,0.15); }
+    .scene-card.completed-scene { opacity: 0.65; }
+    .scene-thumb {
+      width: 80px; height: 56px; border-radius: var(--radius);
+      object-fit: cover; flex-shrink: 0; background: var(--color-surface-3);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.5rem; overflow: hidden;
+    }
+    .scene-thumb img { width: 100%; height: 100%; object-fit: cover; }
+    .scene-card-body { flex: 1; min-width: 0; }
+    .scene-card-title { font-family: var(--font-display); font-size: 0.88rem; margin-bottom: 0.3rem; }
+    .scene-card-desc  { font-family: var(--font-body); font-size: 0.82rem; color: var(--color-text-muted); line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .scene-card-meta  { font-family: var(--font-ui); font-size: 0.68rem; color: var(--color-text-faint); margin-top: 0.4rem; }
+
+    /* ── Character party chips ── */
+    .party-chips { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .party-chip {
+      display: flex; align-items: center; gap: 0.4rem;
+      padding: 0.3rem 0.65rem;
+      background: var(--color-surface-2); border: 1px solid var(--color-border);
+      border-radius: 999px; font-family: var(--font-ui); font-size: 0.75rem;
+    }
+    .party-chip-portrait {
+      width: 22px; height: 22px; border-radius: 50%; overflow: hidden;
+      background: var(--color-surface-3); display: flex; align-items: center; justify-content: center;
+      font-size: 0.7rem;
+    }
+    .party-chip-portrait img { width: 100%; height: 100%; object-fit: cover; }
+
+    /* ── DM chat log ── */
+    .chat-log-entry {
+      padding: 0.6rem 0.85rem; border-radius: var(--radius);
+      margin-bottom: 0.5rem; font-family: var(--font-body); font-size: 0.88rem;
+      line-height: 1.6;
+    }
+    .chat-log-entry.dm    { background: var(--color-surface-2); border-left: 3px solid var(--color-accent); }
+    .chat-log-entry.player{ background: var(--color-surface-3); border-left: 3px solid var(--color-primary); }
+    .chat-log-entry.system{ background: transparent; border-left: 3px solid var(--color-border); font-style: italic; color: var(--color-text-faint); font-size: 0.78rem; }
+    .chat-role-badge {
+      font-family: var(--font-ui); font-size: 0.65rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.05em;
+      margin-bottom: 0.25rem; color: var(--color-text-faint);
+    }
+    .chat-log-entry.dm     .chat-role-badge { color: var(--color-accent); }
+    .chat-log-entry.player .chat-role-badge { color: var(--color-primary); }
+
+    /* ── Wizard step modal ── */
+    .wizard-step { display: none; }
+    .wizard-step.active { display: block; }
+
+    /* ── Split layout for this page ── */
+    .sm-split {
+      display: grid;
+      grid-template-columns: 300px 1fr;
+      gap: 1.25rem;
+      align-items: start;
+    }
+    @media (max-width: 768px) {
+      .sm-split { grid-template-columns: 1fr; }
+      .sm-detail { min-height: auto; }
+      /* Campaign list: horizontal scroll on mobile */
+      .sm-sidebar {
+        flex-direction: row;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        flex-wrap: nowrap;
+        padding-bottom: 0.5rem;
+        gap: 0.5rem;
+      }
+      .campaign-item { min-width: 220px; flex-shrink: 0; }
+      .scene-thumb   { width: 64px; height: 44px; }
+    }
+    .sm-sidebar { display: flex; flex-direction: column; gap: 0.65rem; }
+    .sm-detail  { min-height: 60vh; }
+
+    /* ── Overview stat row ── */
+    .overview-stats {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 0.75rem;
+      margin: 1rem 0;
+    }
+    .overview-stat {
+      background: var(--color-surface-2); border: 1px solid var(--color-border);
+      border-radius: var(--radius); padding: 0.75rem; text-align: center;
+    }
+    .overview-stat-val { font-family: var(--font-display); font-size: 1.4rem; color: var(--color-primary); }
+    .overview-stat-lbl { font-family: var(--font-ui); font-size: 0.68rem; color: var(--color-text-faint); margin-top: 0.2rem; }
+
+    /* char checkbox grid */
+    .char-check-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.5rem;
+    }
+    .char-check-card {
+      display: flex; align-items: center; gap: 0.65rem;
+      padding: 0.65rem 0.85rem;
+      border: 1px solid var(--color-border); border-radius: var(--radius);
+      cursor: pointer; transition: all var(--transition);
+      background: var(--color-surface-2);
+    }
+    .char-check-card:has(input:checked) { border-color: var(--color-primary); background: var(--color-primary-glow); }
+    .char-check-portrait {
+      width: 36px; height: 36px; border-radius: 50%; overflow: hidden;
+      background: var(--color-surface-3); display: flex; align-items: center; justify-content: center;
+      font-size: 1rem; flex-shrink: 0;
+    }
+    .char-check-portrait img { width: 100%; height: 100%; object-fit: cover; }
+    .char-check-info { flex: 1; min-width: 0; }
+    .char-check-name { font-family: var(--font-ui); font-size: 0.82rem; font-weight: 600; }
+    .char-check-sub  { font-family: var(--font-ui); font-size: 0.68rem; color: var(--color-text-faint); }
+  </style>
+</head>
+<body>
+
+<nav class="navbar" role="navigation" aria-label="Main navigation">
+  <a href="index.html" class="navbar-brand">
+    <span class="brand-icon">⚔️</span>DND AI
+  </a>
+  <ul class="navbar-nav" role="list">
+    <li><a href="index.html"             >🏠 Dashboard</a></li>
+    <li><a href="character-create.html"  >✨ Create Character</a></li>
+    <li><a href="character-manager.html" >🧙 Characters</a></li>
+    <li><a href="story-manager.html"      class="active">📖 Campaigns</a></li>
+    <li><a href="item-library.html"      >📦 Items</a></li>
+    <li><a href="game.html"              >⚔️ Play</a></li>
+  </ul>
+  <div class="navbar-actions">
+    <button class="btn btn-ghost btn-sm" id="settings-btn">⚙️ Settings</button>
+  </div>
+  <button class="hamburger" id="hamburger-btn" aria-label="Open menu">☰</button>
+</nav>
+
+<div class="nav-drawer" id="nav-drawer" aria-hidden="true">
+  <ul class="navbar-nav" role="list">
+    <li><a href="index.html"             >🏠 Dashboard</a></li>
+    <li><a href="character-create.html"  >✨ Create Character</a></li>
+    <li><a href="character-manager.html" >🧙 Characters</a></li>
+    <li><a href="story-manager.html"      class="active">📖 Campaigns</a></li>
+    <li><a href="item-library.html"      >📦 Items</a></li>
+    <li><a href="game.html"              >⚔️ Play</a></li>
+  </ul>
+</div>
+<div class="nav-drawer-overlay" id="nav-overlay"></div>
+
+<main class="page-wrapper">
+  <div class="page-container">
+    <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;margin-bottom:1.5rem;">
+      <div>
+        <h1 class="page-title">📖 Campaigns</h1>
+        <p class="page-subtitle">Create and manage your tales of adventure</p>
+      </div>
+      <button class="btn btn-primary" id="new-campaign-btn">＋ Create Campaign</button>
+    </div>
+
+    <div class="sm-split">
+      <!-- Left sidebar: campaign list -->
+      <aside class="sm-sidebar" id="campaign-sidebar">
+        <div id="campaign-list-empty" class="empty-state" style="display:none;">
+          <div class="empty-state-icon">📖</div>
+          <div class="empty-state-title">No campaigns yet</div>
+          <div class="empty-state-text">Create your first campaign to begin your adventure.</div>
+        </div>
+        <!-- Campaign items injected here -->
+      </aside>
+
+      <!-- Right: detail panel -->
+      <section class="sm-detail" id="campaign-detail">
+        <div class="card" style="text-align:center;padding:4rem 2rem;" id="no-selection-card">
+          <div style="font-size:3.5rem;margin-bottom:1rem;">📖</div>
+          <h2 style="color:var(--color-primary);margin-bottom:0.75rem;font-family:var(--font-display);">Select a Campaign</h2>
+          <p style="color:var(--color-text-muted);max-width:400px;margin:0 auto;">
+            Choose a campaign from the left to view its details, or create a new one to start your adventure.
+          </p>
+        </div>
+        <div id="detail-panel" style="display:none;"></div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<!-- ══════════════════════════════════════════════════════════════
+     CREATE CAMPAIGN MODAL (3-step wizard)
+══════════════════════════════════════════════════════════════ -->
+<div class="modal-overlay hidden" id="create-modal" role="dialog" aria-modal="true" aria-labelledby="create-modal-title">
+  <div class="modal" style="max-width:620px;width:95%;">
+    <div class="modal-header">
+      <span class="modal-title" id="create-modal-title">📖 New Campaign</span>
+      <button class="modal-close" id="create-modal-close" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- Step indicator -->
+      <div class="step-progress" style="margin-bottom:1.5rem;">
+        <div class="step-item active" data-step="1">
+          <div class="step-circle">1</div>
+          <div class="step-label">Setting</div>
+        </div>
+        <div class="step-connector"></div>
+        <div class="step-item" data-step="2">
+          <div class="step-circle">2</div>
+          <div class="step-label">Party</div>
+        </div>
+        <div class="step-connector"></div>
+        <div class="step-item" data-step="3">
+          <div class="step-circle">3</div>
+          <div class="step-label">First Scene</div>
+        </div>
+      </div>
+
+      <!-- Step 1: Setting -->
+      <div class="wizard-step active" id="step-1">
+        <div class="form-group">
+          <label for="camp-title">Campaign Title *</label>
+          <input type="text" id="camp-title" placeholder="e.g. The Shattered Crown" />
+        </div>
+        <div class="form-group">
+          <label for="camp-setting">Setting</label>
+          <input type="text" id="camp-setting" placeholder="e.g. Medieval high fantasy, Dark underwater kingdom…" />
+          <div class="form-hint">Describe the world your adventure takes place in.</div>
+        </div>
+        <div class="form-group">
+          <label for="camp-premise">Premise / Opening Hook</label>
+          <textarea id="camp-premise" rows="4" placeholder="What draws the heroes together? What dark force stirs?"></textarea>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="gen-premise-btn">✨ Generate Premise with AI</button>
+      </div>
+
+      <!-- Step 2: Party -->
+      <div class="wizard-step" id="step-2">
+        <p style="font-family:var(--font-ui);font-size:0.85rem;color:var(--color-text-muted);margin-bottom:1rem;">
+          Select the characters who will embark on this campaign. At least one is required.
+        </p>
+        <div class="char-check-grid" id="char-check-grid">
+          <!-- Injected by JS -->
+        </div>
+        <p id="no-chars-notice" class="form-hint" style="display:none;color:var(--color-danger);">
+          No characters found. <a href="character-create.html">Create a character first.</a>
+        </p>
+      </div>
+
+      <!-- Step 3: First Scene -->
+      <div class="wizard-step" id="step-3">
+        <div class="form-group">
+          <label for="scene-title">Opening Scene Title</label>
+          <input type="text" id="scene-title" placeholder="e.g. The Crossroads Inn" />
+        </div>
+        <div class="form-group">
+          <label for="scene-desc">Scene Description</label>
+          <textarea id="scene-desc" rows="5" placeholder="Where does the adventure begin? Set the atmosphere…"></textarea>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="gen-scene-btn">✨ Generate Opening Scene with AI</button>
+        <div id="scene-image-preview" style="margin-top:1rem;display:none;">
+          <p style="font-family:var(--font-ui);font-size:0.75rem;color:var(--color-text-faint);margin-bottom:0.4rem;">Scene Image Preview</p>
+          <img id="scene-preview-img" src="" alt="Scene" style="width:100%;max-height:200px;object-fit:cover;border-radius:var(--radius);border:1px solid var(--color-border);" />
+        </div>
+      </div>
+
+      <!-- Navigation buttons -->
+      <div style="display:flex;justify-content:space-between;margin-top:1.75rem;gap:0.75rem;">
+        <button class="btn btn-ghost" id="wizard-back" style="display:none;">← Back</button>
+        <div style="flex:1;"></div>
+        <button class="btn btn-primary" id="wizard-next">Next →</button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════
+     ADD SCENE MODAL
+══════════════════════════════════════════════════════════════ -->
+<div class="modal-overlay hidden" id="add-scene-modal" role="dialog" aria-modal="true" aria-labelledby="add-scene-title">
+  <div class="modal" style="max-width:560px;width:95%;">
+    <div class="modal-header">
+      <span class="modal-title" id="add-scene-title">🗺️ New Scene</span>
+      <button class="modal-close" id="add-scene-close" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label for="new-scene-title">Scene Title</label>
+        <input type="text" id="new-scene-title" placeholder="e.g. The Dungeon Depths" />
+      </div>
+      <div class="form-group">
+        <label for="new-scene-desc">Scene Description</label>
+        <textarea id="new-scene-desc" rows="5" placeholder="Describe the scene for the players…"></textarea>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="gen-new-scene-btn">✨ Generate with AI</button>
+      <div id="new-scene-img-preview" style="margin-top:1rem;display:none;">
+        <img id="new-scene-preview-img" src="" alt="Scene" style="width:100%;max-height:180px;object-fit:cover;border-radius:var(--radius);border:1px solid var(--color-border);" />
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:1.5rem;gap:0.75rem;">
+        <button class="btn btn-ghost" id="add-scene-cancel">Cancel</button>
+        <button class="btn btn-primary" id="add-scene-save">Add Scene</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { initCommonUI } from './js/app.js';
+import {
+  getAllStories, getStory, saveStory, deleteStory,
+  getAllCharacters, getCharacter,
+} from './js/db.js';
+import { uuid, formatDate, showToast, showLoading } from './js/utils.js';
+import { geminiGenerate } from './js/api-gemini.js';
+import { generateImage } from './js/api-image.js';
+
+initCommonUI();
+
+// ── State ────────────────────────────────────────────────────
+let selectedStoryId = null;
+let wizardStep = 1;
+let wizardData = { title:'', setting:'', premise:'', characterIds:[], sceneTitle:'', sceneDesc:'', sceneImageUrl:'' };
+let addSceneStoryId = null;
+
+// ── Boot ─────────────────────────────────────────────────────
+renderSidebar();
+
+// Auto-select the active story if present
+const active = getAllStories().find(s => s.status === 'active');
+if (active) selectStory(active.id);
+
+// ── Sidebar rendering ─────────────────────────────────────────
+function renderSidebar() {
+  const sidebar = document.getElementById('campaign-sidebar');
+  const stories = getAllStories().sort((a,b) => b.updatedAt - a.updatedAt);
+
+  // Remove old campaign items (keep empty state node)
+  sidebar.querySelectorAll('.campaign-item').forEach(el => el.remove());
+  document.getElementById('campaign-list-empty').style.display = stories.length ? 'none' : 'flex';
+
+  stories.forEach(story => {
+    const el = document.createElement('div');
+    el.className = 'campaign-item' + (story.id === selectedStoryId ? ' active' : '');
+    el.dataset.id = story.id;
+
+    const statusColors = { active: 'var(--color-success)', paused: 'var(--color-text-faint)', completed: 'var(--color-accent)' };
+    const statusLabels = { active: '▶ Active', paused: '⏸ Paused', completed: '✓ Complete' };
+
+    el.innerHTML = `
+      <div class="campaign-item-title">${escHtml(story.title)}</div>
+      <div class="campaign-item-meta">
+        <span style="color:${statusColors[story.status] || 'var(--color-text-faint)'};">${statusLabels[story.status] || story.status}</span>
+        <span>👥 ${story.characterIds.length}</span>
+        <span>🗺️ ${story.scenes.length} scenes</span>
+        <span>${formatDate(story.updatedAt)}</span>
+      </div>
+      <button class="campaign-del-btn" title="Delete campaign" data-del="${story.id}">✕</button>
+    `;
+
+    el.addEventListener('click', e => {
+      if (e.target.closest('[data-del]')) return;
+      selectStory(story.id);
+    });
+
+    el.querySelector('[data-del]').addEventListener('click', e => {
+      e.stopPropagation();
+      if (!confirm(`Delete "${story.title}"? This cannot be undone.`)) return;
+      deleteStory(story.id);
+      if (selectedStoryId === story.id) {
+        selectedStoryId = null;
+        document.getElementById('no-selection-card').style.display = '';
+        document.getElementById('detail-panel').style.display = 'none';
+      }
+      renderSidebar();
+      showToast('Campaign deleted.', 'info');
+    });
+
+    sidebar.appendChild(el);
+  });
+}
+
+// ── Detail panel ─────────────────────────────────────────────
+function selectStory(id) {
+  selectedStoryId = id;
+  renderSidebar();
+  renderDetail(id);
+  document.getElementById('no-selection-card').style.display = 'none';
+  document.getElementById('detail-panel').style.display = '';
+}
+
+function renderDetail(id) {
+  const story = getStory(id);
+  if (!story) return;
+  const panel = document.getElementById('detail-panel');
+
+  const characters = story.characterIds.map(cid => getCharacter(cid)).filter(Boolean);
+  const partyHtml = characters.map(ch => `
+    <div class="party-chip">
+      <div class="party-chip-portrait">
+        ${ch.portrait ? `<img src="${ch.portrait}" alt="${escHtml(ch.name)}" />` : '🧙'}
+      </div>
+      ${escHtml(ch.name)}
+    </div>
+  `).join('');
+
+  const statusOptions = ['active','paused','completed'].map(s =>
+    `<option value="${s}" ${story.status===s?'selected':''}>${s.charAt(0).toUpperCase()+s.slice(1)}</option>`
+  ).join('');
+
+  panel.innerHTML = `
+    <!-- Header -->
+    <div class="card" style="margin-bottom:1rem;">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+        <div>
+          <h2 style="font-family:var(--font-display);font-size:1.35rem;color:var(--color-primary);margin-bottom:0.3rem;">${escHtml(story.title)}</h2>
+          <div style="font-family:var(--font-ui);font-size:0.78rem;color:var(--color-text-faint);">
+            Created ${formatDate(story.createdAt)} &nbsp;·&nbsp; Updated ${formatDate(story.updatedAt)}
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:0.65rem;">
+          <select class="btn btn-ghost btn-sm" id="status-select" style="padding:0.35em 0.6em;cursor:pointer;">
+            ${statusOptions}
+          </select>
+          <a href="game.html" class="btn btn-primary btn-sm">▶ Play</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs" id="detail-tabs">
+      <button class="tab-btn active" data-tab="overview">Overview</button>
+      <button class="tab-btn" data-tab="scenes">Scene History</button>
+      <button class="tab-btn" data-tab="chat">DM Chat Log</button>
+    </div>
+
+    <!-- Overview -->
+    <div class="tab-panel active" id="tab-overview">
+      <div class="overview-stats">
+        <div class="overview-stat">
+          <div class="overview-stat-val">${story.scenes.length}</div>
+          <div class="overview-stat-lbl">Scenes</div>
+        </div>
+        <div class="overview-stat">
+          <div class="overview-stat-val">${characters.length}</div>
+          <div class="overview-stat-lbl">Characters</div>
+        </div>
+        <div class="overview-stat">
+          <div class="overview-stat-val">${story.dmChatHistory.length}</div>
+          <div class="overview-stat-lbl">DM Messages</div>
+        </div>
+        <div class="overview-stat">
+          <div class="overview-stat-val">${story.scenes.filter(s=>s.completedAt).length}</div>
+          <div class="overview-stat-lbl">Scenes Done</div>
+        </div>
+      </div>
+
+      <div style="margin-bottom:1rem;">
+        <div class="section-label" style="font-family:var(--font-display);font-size:0.8rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--color-text-faint);margin-bottom:0.5rem;">Setting</div>
+        <p style="font-family:var(--font-body);font-size:0.92rem;line-height:1.6;">${escHtml(story.setting) || '<em style="color:var(--color-text-faint)">No setting recorded.</em>'}</p>
+      </div>
+
+      <div style="margin-bottom:1rem;">
+        <div class="section-label" style="font-family:var(--font-display);font-size:0.8rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--color-text-faint);margin-bottom:0.5rem;">Premise</div>
+        <p style="font-family:var(--font-body);font-size:0.92rem;line-height:1.6;font-style:italic;">${escHtml(story.premise) || '<span style="color:var(--color-text-faint)">No premise recorded.</span>'}</p>
+      </div>
+
+      <div>
+        <div class="section-label" style="font-family:var(--font-display);font-size:0.8rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--color-text-faint);margin-bottom:0.6rem;">Party</div>
+        ${partyHtml ? `<div class="party-chips">${partyHtml}</div>` : '<p style="color:var(--color-text-faint);font-size:0.85rem;">No characters assigned.</p>'}
+      </div>
+    </div>
+
+    <!-- Scene History -->
+    <div class="tab-panel" id="tab-scenes" style="display:none;">
+      <div style="display:flex;justify-content:flex-end;margin-bottom:1rem;">
+        <button class="btn btn-ghost btn-sm" id="add-scene-btn">＋ Add Scene</button>
+      </div>
+      <div class="scene-timeline" id="scene-timeline">
+        ${renderSceneTimeline(story)}
+      </div>
+    </div>
+
+    <!-- DM Chat Log -->
+    <div class="tab-panel" id="tab-chat" style="display:none;">
+      <div style="display:flex;gap:0.65rem;margin-bottom:1rem;flex-wrap:wrap;">
+        <button class="btn btn-ghost btn-sm" id="export-chat-btn">📤 Export .txt</button>
+        <button class="btn btn-danger btn-sm" id="clear-chat-btn">🗑️ Clear History</button>
+      </div>
+      <div id="chat-log-container" style="max-height:480px;overflow-y:auto;display:flex;flex-direction:column;gap:0.15rem;">
+        ${renderChatLog(story)}
+      </div>
+    </div>
+  `;
+
+  // Tab switching
+  panel.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      panel.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      panel.querySelectorAll('.tab-panel').forEach(p => p.style.display = 'none');
+      btn.classList.add('active');
+      panel.querySelector(`#tab-${btn.dataset.tab}`).style.display = '';
+    });
+  });
+
+  // Status change
+  panel.querySelector('#status-select').addEventListener('change', e => {
+    const st = getStory(id);
+    if (!st) return;
+    if (e.target.value === 'active') {
+      // Pause all other active stories
+      getAllStories().forEach(s => {
+        if (s.id !== id && s.status === 'active') {
+          s.status = 'paused';
+          saveStory(s);
+        }
+      });
+    }
+    st.status = e.target.value;
+    saveStory(st);
+    renderSidebar();
+    showToast(`Campaign status set to "${st.status}".`, 'success');
+  });
+
+  // Add Scene
+  panel.querySelector('#add-scene-btn')?.addEventListener('click', () => openAddSceneModal(id));
+
+  // Mark scene complete
+  panel.querySelectorAll('[data-complete-scene]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const st = getStory(id);
+      const scene = st.scenes.find(s => s.id === btn.dataset.completeScene);
+      if (!scene) return;
+      scene.completedAt = Date.now();
+      // Advance currentSceneIndex if this is the current scene
+      if (st.scenes.indexOf(scene) === st.currentSceneIndex) st.currentSceneIndex++;
+      saveStory(st);
+      renderDetail(id);
+      showToast('Scene marked complete!', 'success');
+    });
+  });
+
+  // Export chat
+  panel.querySelector('#export-chat-btn')?.addEventListener('click', () => exportChat(id));
+  // Clear chat
+  panel.querySelector('#clear-chat-btn')?.addEventListener('click', () => {
+    if (!confirm('Clear all DM chat history for this campaign? This cannot be undone.')) return;
+    const st = getStory(id);
+    st.dmChatHistory = [];
+    saveStory(st);
+    renderDetail(id);
+    showToast('Chat history cleared.', 'info');
+  });
+}
+
+function renderSceneTimeline(story) {
+  if (!story.scenes.length) {
+    return `<div class="empty-state" style="padding:2rem;"><div class="empty-state-icon">🗺️</div><div class="empty-state-title">No scenes yet</div><div class="empty-state-text">Add your first scene to start the adventure.</div></div>`;
+  }
+  return story.scenes.map((scene, idx) => {
+    const isCurrent   = idx === story.currentSceneIndex && !scene.completedAt;
+    const isCompleted = Boolean(scene.completedAt);
+    const cls = isCurrent ? 'current-scene' : (isCompleted ? 'completed-scene' : '');
+    const badge = isCurrent ? '<span class="badge badge-primary" style="font-size:0.65rem;">Current</span>' :
+                  isCompleted ? '<span class="badge" style="background:var(--color-success-glow);color:var(--color-success);font-size:0.65rem;">✓ Done</span>' : '';
+    const completeBtn = !isCompleted && !isCurrent ? '' :
+      isCurrent ? `<button class="btn btn-ghost btn-sm" style="font-size:0.72rem;padding:0.25em 0.6em;" data-complete-scene="${scene.id}">Mark Complete</button>` : '';
+
+    const thumb = scene.imageUrl
+      ? `<div class="scene-thumb"><img src="${escHtml(scene.imageUrl)}" alt="${escHtml(scene.title)}" loading="lazy" /></div>`
+      : `<div class="scene-thumb">🗺️</div>`;
+
+    return `
+      <div class="scene-card ${cls}">
+        ${thumb}
+        <div class="scene-card-body">
+          <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">
+            <div class="scene-card-title">${escHtml(scene.title)}</div>
+            ${badge}
+          </div>
+          <div class="scene-card-desc">${escHtml(scene.description)}</div>
+          <div class="scene-card-meta">
+            Scene ${idx + 1}${scene.completedAt ? ' · Completed ' + formatDate(scene.completedAt) : ''}
+            ${completeBtn}
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderChatLog(story) {
+  if (!story.dmChatHistory.length) {
+    return `<p style="color:var(--color-text-faint);font-family:var(--font-ui);font-size:0.85rem;text-align:center;padding:2rem;">No chat history yet. Start playing to see the DM conversation here.</p>`;
+  }
+  return story.dmChatHistory.map(msg => {
+    const cls = msg.role === 'assistant' ? 'dm' : msg.role === 'user' ? 'player' : 'system';
+    const label = msg.role === 'assistant' ? 'DM' : msg.role === 'user' ? 'Player' : 'System';
+    const time = msg.timestamp ? new Date(msg.timestamp).toLocaleString() : '';
+    return `
+      <div class="chat-log-entry ${cls}">
+        <div class="chat-role-badge">${label}${time ? ' &nbsp;·&nbsp; ' + time : ''}</div>
+        <div>${escHtml(msg.content)}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+function exportChat(id) {
+  const story = getStory(id);
+  if (!story) return;
+  const lines = [`Campaign: ${story.title}`, `Exported: ${new Date().toLocaleString()}`, '='.repeat(60), ''];
+  story.dmChatHistory.forEach(msg => {
+    const label = msg.role === 'assistant' ? 'DM' : msg.role === 'user' ? 'Player' : 'System';
+    const time  = msg.timestamp ? new Date(msg.timestamp).toLocaleString() : '';
+    lines.push(`[${label}${time ? ' | ' + time : ''}]`);
+    lines.push(msg.content);
+    lines.push('');
+  });
+  const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+  const url  = URL.createObjectURL(blob);
+  const a    = Object.assign(document.createElement('a'), {
+    href: url, download: `campaign-${story.title.replace(/\W+/g,'-').toLowerCase()}.txt`,
+  });
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('Chat exported!', 'success');
+}
+
+// ── Create Campaign Wizard ────────────────────────────────────
+document.getElementById('new-campaign-btn').addEventListener('click', openCreateModal);
+document.getElementById('create-modal-close').addEventListener('click', closeCreateModal);
+document.getElementById('create-modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('create-modal')) closeCreateModal();
+});
+
+function openCreateModal() {
+  wizardStep = 1;
+  wizardData = { title:'', setting:'', premise:'', characterIds:[], sceneTitle:'', sceneDesc:'', sceneImageUrl:'' };
+  showWizardStep(1);
+  populateCharCheckGrid();
+  document.getElementById('camp-title').value = '';
+  document.getElementById('camp-setting').value = '';
+  document.getElementById('camp-premise').value = '';
+  document.getElementById('scene-title').value = '';
+  document.getElementById('scene-desc').value = '';
+  document.getElementById('scene-image-preview').style.display = 'none';
+  document.getElementById('create-modal').classList.remove('hidden');
+}
+
+function closeCreateModal() {
+  document.getElementById('create-modal').classList.add('hidden');
+}
+
+function showWizardStep(n) {
+  document.querySelectorAll('.wizard-step').forEach((el, i) => {
+    el.classList.toggle('active', i + 1 === n);
+  });
+  document.querySelectorAll('.step-item').forEach(el => {
+    const num = parseInt(el.dataset.step);
+    el.classList.toggle('active', num === n);
+    el.classList.toggle('done', num < n);
+  });
+  document.getElementById('wizard-back').style.display = n > 1 ? '' : 'none';
+  document.getElementById('wizard-next').textContent = n < 3 ? 'Next →' : '✨ Create Campaign';
+}
+
+function populateCharCheckGrid() {
+  const grid = document.getElementById('char-check-grid');
+  const chars = getAllCharacters();
+  document.getElementById('no-chars-notice').style.display = chars.length ? 'none' : '';
+  grid.innerHTML = chars.map(ch => `
+    <label class="char-check-card" for="cc-${ch.id}">
+      <input type="checkbox" id="cc-${ch.id}" value="${ch.id}" style="display:none;" />
+      <div class="char-check-portrait">
+        ${ch.portrait ? `<img src="${ch.portrait}" alt="" />` : '🧙'}
+      </div>
+      <div class="char-check-info">
+        <div class="char-check-name">${escHtml(ch.name)}</div>
+        <div class="char-check-sub">Lvl ${ch.level} ${ch.race} ${ch.class}</div>
+      </div>
+    </label>
+  `).join('');
+}
+
+// Generate premise with AI
+document.getElementById('gen-premise-btn').addEventListener('click', async () => {
+  const title   = document.getElementById('camp-title').value.trim();
+  const setting = document.getElementById('camp-setting').value.trim();
+  const btn = document.getElementById('gen-premise-btn');
+  try {
+    btn.disabled = true; btn.textContent = '⏳ Generating…';
+    const prompt = `Write a compelling 2-3 sentence DND campaign premise for a campaign titled "${title || 'The Unknown Journey'}" set in "${setting || 'a high fantasy world'}". Make it dramatic, mysterious, and hook the players immediately. Just the premise text, no extra formatting.`;
+    const text = await geminiGenerate(prompt);
+    document.getElementById('camp-premise').value = text.trim();
+  } catch (err) {
+    showToast('AI generation failed: ' + err.message, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = '✨ Generate Premise with AI';
+  }
+});
+
+// Generate opening scene with AI
+document.getElementById('gen-scene-btn').addEventListener('click', async () => {
+  const title   = document.getElementById('camp-title').value || document.getElementById('camp-title').placeholder;
+  const setting = document.getElementById('camp-setting').value || 'a fantasy world';
+  const premise = document.getElementById('camp-premise').value || '';
+  const btn = document.getElementById('gen-scene-btn');
+  try {
+    btn.disabled = true; btn.textContent = '⏳ Generating…';
+    const prompt = `Write a vivid DND opening scene description (3-4 sentences) for a campaign called "${title}" set in "${setting}". Premise: ${premise}. Describe the environment, atmosphere, and what the adventurers encounter when they first arrive. First-person narrative perspective. Just the description, no extra headers.`;
+    const text = await geminiGenerate(prompt);
+    document.getElementById('scene-desc').value = text.trim();
+  } catch (err) {
+    showToast('AI generation failed: ' + err.message, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = '✨ Generate Opening Scene with AI';
+  }
+});
+
+// Wizard navigation
+document.getElementById('wizard-next').addEventListener('click', async () => {
+  if (wizardStep === 1) {
+    const title = document.getElementById('camp-title').value.trim();
+    if (!title) { showToast('Please enter a campaign title.', 'error'); return; }
+    wizardData.title   = title;
+    wizardData.setting = document.getElementById('camp-setting').value.trim();
+    wizardData.premise = document.getElementById('camp-premise').value.trim();
+    wizardStep = 2;
+    showWizardStep(2);
+
+  } else if (wizardStep === 2) {
+    const checked = [...document.querySelectorAll('#char-check-grid input:checked')].map(cb => cb.value);
+    if (!checked.length) { showToast('Select at least one character.', 'error'); return; }
+    wizardData.characterIds = checked;
+    wizardStep = 3;
+    showWizardStep(3);
+
+  } else if (wizardStep === 3) {
+    await createCampaign();
+  }
+});
+
+document.getElementById('wizard-back').addEventListener('click', () => {
+  if (wizardStep > 1) { wizardStep--; showWizardStep(wizardStep); }
+});
+
+async function createCampaign() {
+  const sceneTitle = document.getElementById('scene-title').value.trim() || 'The Beginning';
+  const sceneDesc  = document.getElementById('scene-desc').value.trim();
+  const nextBtn = document.getElementById('wizard-next');
+  nextBtn.disabled = true; nextBtn.textContent = '⏳ Creating…';
+
+  try {
+    // Build image prompt from scene description
+    const imagePrompt = buildImagePrompt(wizardData.setting, sceneDesc);
+
+    // Create opening scene (image fetched async)
+    const firstScene = {
+      id: uuid(),
+      title: sceneTitle,
+      description: sceneDesc,
+      imagePrompt,
+      imageUrl: '',
+      npcs: [],
+      loot: [],
+      completedAt: null,
+    };
+
+    const story = {
+      id: uuid(),
+      title: wizardData.title,
+      setting: wizardData.setting,
+      premise: wizardData.premise,
+      characterIds: wizardData.characterIds,
+      scenes: [firstScene],
+      currentSceneIndex: 0,
+      dmChatHistory: [],
+      status: 'paused',
+      sceneImageUrl: '',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    saveStory(story);
+    closeCreateModal();
+    renderSidebar();
+    selectStory(story.id);
+    showToast('Campaign created!', 'success');
+
+    // Async: generate scene image
+    fetchSceneImage(story.id, firstScene.id, imagePrompt);
+
+  } catch (err) {
+    showToast('Failed to create campaign: ' + err.message, 'error');
+  } finally {
+    nextBtn.disabled = false; nextBtn.textContent = '✨ Create Campaign';
+  }
+}
+
+async function fetchSceneImage(storyId, sceneId, prompt) {
+  try {
+    const url = await generateImage(prompt + ', fantasy digital art, cinematic, wide angle', 768, 432);
+    const st  = getStory(storyId);
+    if (!st) return;
+    const scene = st.scenes.find(s => s.id === sceneId);
+    if (scene) {
+      scene.imageUrl = url;
+      if (st.currentSceneIndex === st.scenes.indexOf(scene)) st.sceneImageUrl = url;
+      saveStory(st);
+      if (selectedStoryId === storyId) renderDetail(storyId);
+    }
+  } catch {
+    // Image generation is best-effort; silently ignore failures
+  }
+}
+
+function buildImagePrompt(setting, sceneDesc) {
+  const base = sceneDesc ? sceneDesc.slice(0, 200) : 'fantasy adventure scene';
+  const world = setting ? `, ${setting}` : '';
+  return `${base}${world}`;
+}
+
+// ── Add Scene Modal ───────────────────────────────────────────
+document.getElementById('add-scene-close').addEventListener('click', closeAddSceneModal);
+document.getElementById('add-scene-cancel').addEventListener('click', closeAddSceneModal);
+document.getElementById('add-scene-modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('add-scene-modal')) closeAddSceneModal();
+});
+
+function openAddSceneModal(storyId) {
+  addSceneStoryId = storyId;
+  document.getElementById('new-scene-title').value = '';
+  document.getElementById('new-scene-desc').value = '';
+  document.getElementById('new-scene-img-preview').style.display = 'none';
+  document.getElementById('add-scene-modal').classList.remove('hidden');
+}
+
+function closeAddSceneModal() {
+  document.getElementById('add-scene-modal').classList.add('hidden');
+  addSceneStoryId = null;
+}
+
+document.getElementById('gen-new-scene-btn').addEventListener('click', async () => {
+  const story = addSceneStoryId ? getStory(addSceneStoryId) : null;
+  const btn = document.getElementById('gen-new-scene-btn');
+  try {
+    btn.disabled = true; btn.textContent = '⏳ Generating…';
+    const setting = story?.setting || 'a fantasy world';
+    const premise = story?.premise || '';
+    const sceneCount = story ? story.scenes.length + 1 : 'next';
+    const prompt = `Write a DND scene description (3-4 sentences) for scene ${sceneCount} of a campaign set in "${setting}". Premise: ${premise}. Make it atmospheric and engaging. Just the scene description, no headers.`;
+    const text = await geminiGenerate(prompt);
+    document.getElementById('new-scene-desc').value = text.trim();
+  } catch (err) {
+    showToast('AI generation failed: ' + err.message, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = '✨ Generate with AI';
+  }
+});
+
+document.getElementById('add-scene-save').addEventListener('click', async () => {
+  if (!addSceneStoryId) return;
+  const title = document.getElementById('new-scene-title').value.trim() || 'New Scene';
+  const desc  = document.getElementById('new-scene-desc').value.trim();
+  const st = getStory(addSceneStoryId);
+  if (!st) return;
+
+  const newScene = {
+    id: uuid(),
+    title,
+    description: desc,
+    imagePrompt: buildImagePrompt(st.setting, desc),
+    imageUrl: '',
+    npcs: [],
+    loot: [],
+    completedAt: null,
+  };
+
+  st.scenes.push(newScene);
+  saveStory(st);
+  closeAddSceneModal();
+  renderDetail(addSceneStoryId);
+  showToast('Scene added!', 'success');
+
+  // Async image
+  fetchSceneImage(st.id, newScene.id, newScene.imagePrompt);
+});
+
+// ── Utility ───────────────────────────────────────────────────
+function escHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+</script>
+</body>
+</html>

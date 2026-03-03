@@ -1,0 +1,1139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Characters — DND AI</title>
+  <meta name="description" content="Manage your DND characters — view stats, inventory, skills, HP, conditions, and adventure logs." />
+  <meta property="og:title"       content="DND AI — Character Manager" />
+  <meta property="og:description" content="Track HP, inventory, skills, and conditions for all your DND heroes." />
+  <meta property="og:type"        content="website" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpolygon points='16,2 30,10 30,22 16,30 2,22 2,10' fill='%230d0d0f' stroke='%23c9a84c' stroke-width='2'/%3E%3Ctext x='16' y='21' text-anchor='middle' font-size='14' fill='%23c9a84c' font-family='serif'%3E20%3C/text%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/components.css" />
+  <link rel="stylesheet" href="css/layout.css" />
+  <style>
+    /* ── Character sidebar items ── */
+    .char-sidebar-item {
+      display: flex; align-items: center; gap: 0.6rem;
+      padding: 0.65rem 0.75rem;
+      border: 1px solid var(--color-border); border-radius: var(--radius);
+      cursor: pointer; transition: all var(--transition);
+      background: var(--color-surface-2); position: relative;
+    }
+    .char-sidebar-item:hover  { border-color: var(--color-primary-dark); }
+    .char-sidebar-item.active { border-color: var(--color-primary); background: var(--color-primary-glow); }
+    .char-sidebar-portrait {
+      width: 44px; height: 44px; border-radius: 50%; flex-shrink: 0;
+      overflow: hidden; background: var(--color-surface-3);
+      display: flex; align-items: center; justify-content: center; font-size: 1.3rem;
+    }
+    .char-sidebar-portrait img { width: 100%; height: 100%; object-fit: cover; }
+    .char-sidebar-info { flex: 1; min-width: 0; }
+    .char-sidebar-name {
+      font-family: var(--font-display); font-size: 0.85rem;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .char-sidebar-meta { font-family: var(--font-ui); font-size: 0.68rem; color: var(--color-text-faint); }
+    .char-del-btn {
+      position: absolute; top: 0.3rem; right: 0.3rem;
+      background: none; border: none; color: var(--color-text-faint);
+      cursor: pointer; font-size: 0.75rem; padding: 0.2em 0.3em;
+      border-radius: var(--radius); opacity: 0; transition: opacity var(--transition);
+    }
+    .char-sidebar-item:hover .char-del-btn { opacity: 1; }
+    .char-del-btn:hover { color: var(--color-danger); background: var(--color-danger-glow); }
+
+    /* ── Inventory item cards ── */
+    .inv-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
+      gap: 0.85rem;
+    }
+    .item-card {
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-lg); overflow: hidden;
+      display: flex; flex-direction: column;
+      transition: all var(--transition); cursor: default;
+    }
+    .item-card:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+    .item-card[data-rarity="uncommon"] { border-color: var(--rarity-uncommon); box-shadow: 0 0 8px rgba(68,204,102,0.12); }
+    .item-card[data-rarity="rare"]     { border-color: var(--rarity-rare);     box-shadow: 0 0 12px rgba(68,136,255,0.18); }
+    .item-card[data-rarity="legendary"]{ border-color: var(--rarity-legendary);box-shadow: 0 0 18px rgba(255,153,0,0.28); }
+    .item-icon-wrap {
+      width: 100%; aspect-ratio: 1; background: var(--color-surface-2);
+      display: flex; align-items: center; justify-content: center; overflow: hidden;
+    }
+    .item-icon-wrap img   { width: 100%; height: 100%; object-fit: cover; }
+    .item-icon-ph         { font-size: 2.5rem; opacity: 0.4; }
+    .item-card-body       { padding: 0.65rem 0.7rem; flex: 1; }
+    .item-card-name       { font-family: var(--font-display); font-size: 0.82rem; margin-bottom: 0.3rem; line-height: 1.2; }
+    .item-card-stat       { font-family: var(--font-ui); font-size: 0.68rem; color: var(--color-text-muted); }
+    .item-card-actions    { display: flex; gap: 0.3rem; padding: 0.45rem 0.6rem; border-top: 1px solid var(--color-border); }
+    .item-card-actions .btn { flex: 1; font-size: 0.72rem; padding: 0.3em 0.4em; }
+
+    /* ── Skills tab ── */
+    .skills-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 0.4rem;
+    }
+    .skill-row {
+      display: flex; align-items: center; gap: 0.6rem;
+      padding: 0.45rem 0.65rem; background: var(--color-surface-2);
+      border: 1px solid var(--color-border); border-radius: var(--radius);
+    }
+    .skill-row:has(input:checked) { border-color: var(--color-primary-dark); background: var(--color-primary-glow); }
+    .skill-name  { flex: 1; font-family: var(--font-ui); font-size: 0.8rem; cursor: pointer; }
+    .skill-ability { font-family: var(--font-ui); font-size: 0.67rem; color: var(--color-text-faint); }
+    .skill-mod   { font-family: var(--font-display); font-size: 0.88rem; font-weight: 700; min-width: 28px; text-align: right; }
+
+    /* ── Item detail modal icon ── */
+    .idet-icon-box {
+      width: 128px; height: 128px; border-radius: var(--radius);
+      overflow: hidden; background: var(--color-surface-2);
+      border: 1px solid var(--color-border);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .idet-icon-box img { width: 100%; height: 100%; object-fit: cover; }
+
+    /* ── HP controls ── */
+    .hp-controls { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+    .hp-display-big {
+      font-family: var(--font-display); font-size: 1rem; font-weight: 700;
+      color: var(--color-danger); min-width: 78px; text-align: center;
+    }
+
+    /* Gold editable */
+    .gold-input {
+      width: 70px; background: transparent; border: none;
+      border-bottom: 1px solid var(--color-border-light);
+      color: var(--color-text); font-family: var(--font-ui); font-size: 0.72rem;
+      text-align: center; outline: none; transition: border-color var(--transition);
+    }
+    .gold-input:focus { border-bottom-color: var(--color-primary); }
+
+    /* Search results */
+    .search-result-list { display: flex; flex-direction: column; gap: 0.3rem; max-height: 220px; overflow-y: auto; }
+    .search-result-row {
+      display: flex; align-items: center; gap: 0.75rem; padding: 0.4rem 0.6rem;
+      background: var(--color-surface-2); border: 1px solid var(--color-border);
+      border-radius: var(--radius);
+    }
+
+    @media (max-width: 640px) {
+      .inv-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    /* Mobile: split layout adjustments */
+    @media (max-width: 900px) {
+      /* Sidebar becomes a horizontal card scroller */
+      .split-sidebar {
+        max-height: 220px;
+        overflow-x: auto;
+        overflow-y: hidden;
+        -webkit-overflow-scrolling: touch;
+      }
+      .split-sidebar-list {
+        flex-direction: row;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        overflow-y: hidden;
+        padding-bottom: 0.5rem;
+      }
+      .char-sidebar-item {
+        min-width: 160px;
+        flex-shrink: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<nav class="navbar" role="navigation" aria-label="Main navigation">
+  <a href="index.html" class="navbar-brand"><span class="brand-icon">⚔️</span>DND AI</a>
+  <ul class="navbar-nav" role="list">
+    <li><a href="index.html"            >🏠 Dashboard</a></li>
+    <li><a href="character-create.html" >✨ Create Character</a></li>
+    <li><a href="character-manager.html" class="active">🧙 Characters</a></li>
+    <li><a href="story-manager.html"    >📖 Campaigns</a></li>
+    <li><a href="item-library.html"     >📦 Items</a></li>
+    <li><a href="game.html"             >⚔️ Play</a></li>
+  </ul>
+  <div class="navbar-actions">
+    <button class="btn btn-ghost btn-sm" id="settings-btn">⚙️ Settings</button>
+  </div>
+  <button class="hamburger" id="hamburger-btn" aria-label="Open menu">☰</button>
+</nav>
+<div class="nav-drawer" id="nav-drawer" aria-hidden="true">
+  <ul class="navbar-nav" role="list">
+    <li><a href="index.html"            >🏠 Dashboard</a></li>
+    <li><a href="character-create.html" >✨ Create Character</a></li>
+    <li><a href="character-manager.html" class="active">🧙 Characters</a></li>
+    <li><a href="story-manager.html"    >📖 Campaigns</a></li>
+    <li><a href="item-library.html"     >📦 Items</a></li>
+    <li><a href="game.html"             >⚔️ Play</a></li>
+  </ul>
+</div>
+<div class="nav-drawer-overlay" id="nav-overlay"></div>
+
+<!-- ── Split layout ── -->
+<div class="page-wrapper" style="overflow: hidden;">
+  <div class="split-layout">
+
+    <!-- LEFT SIDEBAR -->
+    <aside class="split-sidebar" aria-label="Character list">
+      <div class="split-sidebar-header">
+        <span class="split-sidebar-title">🧙 Characters</span>
+        <a href="character-create.html" class="btn btn-primary btn-sm">＋ New</a>
+      </div>
+      <div class="split-sidebar-list" id="char-list"></div>
+    </aside>
+
+    <!-- RIGHT PANEL -->
+    <main class="split-main" id="char-detail" aria-label="Character detail"></main>
+
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════
+     ITEM DETAIL MODAL
+     ════════════════════════════════════════════ -->
+<div class="modal-overlay hidden" id="item-detail-modal"
+     role="dialog" aria-modal="true" aria-labelledby="idet-title">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <span class="modal-title" id="idet-title">Item Detail</span>
+      <button class="modal-close" id="idet-close" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body" id="idet-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-danger btn-sm" id="idet-drop-btn">🗑 Drop Item</button>
+      <div style="flex:1;"></div>
+      <button class="btn btn-ghost" id="idet-close-2">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════
+     ADD ITEM MODAL
+     ════════════════════════════════════════════ -->
+<div class="modal-overlay hidden" id="add-item-modal"
+     role="dialog" aria-modal="true" aria-labelledby="ait-title">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <span class="modal-title" id="ait-title">🎒 Add Item to Inventory</span>
+      <button class="modal-close" id="ait-close" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- Search library -->
+      <div style="margin-bottom: 1.25rem;">
+        <h4 style="font-family:var(--font-display);font-size:0.9rem;color:var(--color-primary);margin-bottom:0.6rem;">
+          Search Item Library
+        </h4>
+        <div class="form-group">
+          <input type="search" id="item-search-input" placeholder="Type to search…" autocomplete="off" />
+        </div>
+        <div class="search-result-list" id="item-search-results">
+          <div style="color:var(--color-text-faint);font-size:0.8rem;font-style:italic;">
+            No items in library yet — create one below.
+          </div>
+        </div>
+      </div>
+
+      <div class="ornament">✦</div>
+
+      <!-- Create new item -->
+      <h4 style="font-family:var(--font-display);font-size:0.9rem;color:var(--color-primary);margin-bottom:0.75rem;">
+        Create New Item
+      </h4>
+
+      <div class="form-row form-row-2" style="margin-bottom:0.75rem;">
+        <div class="form-group" style="margin:0;">
+          <label for="ni-name">Name <span style="color:var(--color-danger)">*</span></label>
+          <input type="text" id="ni-name" placeholder="e.g. Flamebrand Dagger" maxlength="60" />
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label for="ni-rarity">Rarity</label>
+          <select id="ni-rarity">
+            <option value="common">Common</option>
+            <option value="uncommon">Uncommon</option>
+            <option value="rare">Rare</option>
+            <option value="legendary">Legendary</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-row form-row-2" style="margin-bottom:0.75rem;">
+        <div class="form-group" style="margin:0;">
+          <label for="ni-type">Type</label>
+          <select id="ni-type">
+            <option value="weapon">⚔️ Weapon</option>
+            <option value="armor">🛡️ Armor</option>
+            <option value="potion">💊 Potion</option>
+            <option value="misc">📦 Misc</option>
+            <option value="quest">📜 Quest</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label for="ni-value">Gold Value</label>
+          <input type="number" id="ni-value" placeholder="0" min="0" />
+        </div>
+      </div>
+
+      <!-- Stat fields (shown conditionally) -->
+      <div id="ni-stats-section">
+        <div class="form-row form-row-2" style="margin-bottom:0.75rem;">
+          <div class="form-group" style="margin:0;" id="ni-damage-group">
+            <label for="ni-damage">Damage Dice</label>
+            <input type="text" id="ni-damage" placeholder="e.g. 1d8+2" />
+          </div>
+          <div class="form-group" style="margin:0;" id="ni-ac-group">
+            <label for="ni-ac">AC Bonus</label>
+            <input type="number" id="ni-ac" placeholder="e.g. 2" min="0" />
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom:0.75rem;">
+          <label for="ni-effect">Effect</label>
+          <input type="text" id="ni-effect" placeholder="e.g. Restores 2d4+2 HP on use" />
+        </div>
+      </div>
+
+      <div class="form-group" style="margin-bottom:0.75rem;">
+        <label for="ni-desc">Description</label>
+        <textarea id="ni-desc" rows="2" placeholder="Brief physical description…"></textarea>
+      </div>
+
+      <div class="form-group" style="margin-bottom:0.75rem;">
+        <label for="ni-lore">Lore / Backstory</label>
+        <textarea id="ni-lore" rows="3" placeholder="AI-generated or write your own…"></textarea>
+      </div>
+
+      <div style="display:flex;gap:0.65rem;flex-wrap:wrap;align-items:center;margin-bottom:1rem;">
+        <button class="btn btn-accent btn-sm" id="ni-gen-lore-btn">✨ Generate Lore with AI</button>
+        <button class="btn btn-ghost btn-sm"  id="ni-gen-icon-btn">🎨 Generate Icon Preview</button>
+        <div id="ni-gen-hint" style="font-family:var(--font-ui);font-size:0.75rem;color:var(--color-text-faint);"></div>
+      </div>
+
+      <!-- Icon preview -->
+      <div id="ni-icon-preview" class="hidden" style="margin-bottom:0.75rem;">
+        <label style="margin-bottom:0.35rem;display:block;">Icon Preview</label>
+        <img id="ni-icon-img" alt="Item icon preview"
+             style="width:96px;height:96px;object-fit:cover;border-radius:var(--radius);border:1px solid var(--color-primary-dark);" />
+      </div>
+
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="ait-cancel">Cancel</button>
+      <button class="btn btn-primary" id="ait-save">🎒 Add to Inventory</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════
+     ADD LOG ENTRY MODAL
+     ════════════════════════════════════════════ -->
+<div class="modal-overlay hidden" id="log-modal" role="dialog" aria-modal="true">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">📜 Add Log Entry</span>
+      <button class="modal-close" id="log-close" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label for="log-text">Entry</label>
+        <textarea id="log-text" rows="4"
+                  placeholder="Describe what happened in the adventure…"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="log-cancel">Cancel</button>
+      <button class="btn btn-primary" id="log-save">Save Entry</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { initCommonUI }                                from './js/app.js';
+import {
+  getAllCharacters, getCharacter, saveCharacter, deleteCharacter,
+  getAllItems, getItem, saveItem,
+  updateCharacterHP, updateCharacterInventory, addToAdventureLog,
+} from './js/db.js';
+import {
+  uuid, getModifier, formatModifier, getProficiencyBonus, xpForLevel,
+  escapeHtml, showToast, showLoading, hideLoading,
+  capitalize, truncate, timeAgo,
+  CONDITIONS, SKILLS,
+} from './js/utils.js';
+import { geminiGenerate, hasGeminiKey } from './js/api-gemini.js';
+import { generateIconBase64, buildIconPrompt } from './js/api-image.js';
+
+initCommonUI();
+
+// ── Page state ────────────────────────────────────────────────
+let selectedCharId = null;
+let activeTab      = 'stats';
+let viewingItemId  = null;
+let newItemIcon    = '';   // base64 for newly created item
+
+const TYPE_ICON = { weapon:'⚔️', armor:'🛡️', potion:'💊', misc:'📦', quest:'📜' };
+
+// ── Init ──────────────────────────────────────────────────────
+function init() {
+  const preId = new URLSearchParams(window.location.search).get('id');
+  renderSidebar();
+  const chars = getAllCharacters();
+  if (preId && chars.find(c => c.id === preId)) {
+    selectChar(preId);
+  } else if (chars.length > 0) {
+    selectChar(chars[0].id);
+  } else {
+    renderEmptyDetail();
+  }
+}
+
+// ── Sidebar ───────────────────────────────────────────────────
+function renderSidebar() {
+  const chars = getAllCharacters();
+  const list  = document.getElementById('char-list');
+
+  if (chars.length === 0) {
+    list.innerHTML = `
+      <div class="empty-state" style="padding:2rem 0.75rem;">
+        <div class="empty-state-icon">🧙</div>
+        <div class="empty-state-text">No characters yet</div>
+        <a href="character-create.html" class="btn btn-primary btn-sm" style="margin-top:0.5rem;">✨ Create</a>
+      </div>`;
+    return;
+  }
+
+  list.innerHTML = chars.map(char => {
+    const hp  = char.stats?.hp ?? 0;
+    const mhp = char.stats?.maxHp ?? 1;
+    const pct = Math.max(0, Math.min(100, (hp / mhp) * 100));
+    const hpC = pct > 60 ? 'high' : pct > 25 ? 'mid' : 'low';
+    const portrait = char.portrait
+      ? `<img src="${escapeHtml(char.portrait)}" alt="${escapeHtml(char.name)}" />`
+      : '🧙';
+
+    return `
+      <div class="char-sidebar-item ${char.id === selectedCharId ? 'active' : ''}"
+           data-id="${char.id}" role="button" tabindex="0"
+           aria-label="Select ${escapeHtml(char.name)}">
+        <div class="char-sidebar-portrait">${portrait}</div>
+        <div class="char-sidebar-info">
+          <div class="char-sidebar-name">${escapeHtml(char.name)}</div>
+          <div class="char-sidebar-meta">
+            ${escapeHtml(capitalize(char.race))} ${escapeHtml(capitalize(char.class))} · Lv ${char.level}
+          </div>
+          <div class="hp-display" style="margin-top:0.25rem;">
+            <div class="progress-bar" style="flex:1;height:5px;">
+              <div class="progress-bar-fill ${hpC}" style="width:${pct}%"></div>
+            </div>
+            <span class="hp-numbers">${hp}/${mhp}</span>
+          </div>
+        </div>
+        <button class="char-del-btn" data-del="${char.id}" title="Delete ${escapeHtml(char.name)}">🗑</button>
+      </div>
+    `;
+  }).join('');
+
+  list.querySelectorAll('[data-id]').forEach(el => {
+    el.addEventListener('click', e => {
+      if (e.target.closest('[data-del]')) return;
+      selectChar(el.dataset.id);
+    });
+    el.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectChar(el.dataset.id); }
+    });
+  });
+
+  list.querySelectorAll('[data-del]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const char = getCharacter(btn.dataset.del);
+      if (!char) return;
+      if (!confirm(`Delete "${char.name}"? This cannot be undone.`)) return;
+      deleteCharacter(btn.dataset.del);
+      showToast('Character deleted.', 'info');
+      if (selectedCharId === btn.dataset.del) {
+        selectedCharId = null;
+        const remaining = getAllCharacters();
+        remaining.length > 0 ? selectChar(remaining[0].id) : renderEmptyDetail();
+      }
+      renderSidebar();
+    });
+  });
+}
+
+function selectChar(id) {
+  selectedCharId = id;
+  renderSidebar();
+  renderDetail();
+  history.replaceState(null, '', `?id=${id}`);
+}
+
+// ── Empty detail ──────────────────────────────────────────────
+function renderEmptyDetail() {
+  document.getElementById('char-detail').innerHTML = `
+    <div class="empty-state" style="height:100%;">
+      <div class="empty-state-icon">🧙</div>
+      <div class="empty-state-title">No Character Selected</div>
+      <div class="empty-state-text">Select a character from the list, or create a new one.</div>
+      <a href="character-create.html" class="btn btn-primary" style="margin-top:0.5rem;">✨ Create Character</a>
+    </div>`;
+}
+
+// ── Main detail render ────────────────────────────────────────
+function renderDetail() {
+  const char = getCharacter(selectedCharId);
+  if (!char) { renderEmptyDetail(); return; }
+
+  const hp    = char.stats?.hp ?? 0;
+  const mhp   = char.stats?.maxHp ?? 1;
+  const hpPct = Math.max(0, Math.min(100, (hp / mhp) * 100));
+  const hpC   = hpPct > 60 ? 'high' : hpPct > 25 ? 'mid' : 'low';
+  const xpNxt = xpForLevel(char.level);
+  const xpPct = Math.min(100, ((char.xp ?? 0) / xpNxt) * 100);
+
+  const portrait = char.portrait
+    ? `<img src="${escapeHtml(char.portrait)}" class="portrait portrait-lg" alt="${escapeHtml(char.name)}" style="object-fit:cover;" />`
+    : `<div class="portrait portrait-lg" style="display:flex;align-items:center;justify-content:center;font-size:3rem;">🧙</div>`;
+
+  const condHtml = (char.conditions ?? []).length > 0
+    ? (char.conditions).map(c => `
+        <span class="condition-tag">
+          ${escapeHtml(c)}
+          <button class="condition-remove" data-cond-remove="${escapeHtml(c)}"
+                  aria-label="Remove ${escapeHtml(c)}">×</button>
+        </span>`).join('')
+    : `<span style="font-family:var(--font-ui);font-size:0.78rem;color:var(--color-text-faint);">No conditions</span>`;
+
+  document.getElementById('char-detail').innerHTML = `
+    <div style="padding:1.5rem;max-width:960px;">
+
+      <!-- ── Character header ── -->
+      <div style="display:flex;gap:1.5rem;align-items:flex-start;margin-bottom:1.5rem;flex-wrap:wrap;">
+        ${portrait}
+
+        <div style="flex:1;min-width:200px;">
+          <h2 style="font-family:var(--font-display);font-size:1.5rem;color:var(--color-primary);margin-bottom:0.2rem;">
+            ${escapeHtml(char.name)}
+          </h2>
+          <div style="font-family:var(--font-ui);color:var(--color-text-muted);font-size:0.875rem;margin-bottom:0.5rem;">
+            ${escapeHtml(capitalize(char.race))} ${escapeHtml(capitalize(char.class))}
+          </div>
+
+          <!-- Badges row -->
+          <div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.75rem;align-items:center;">
+            <span class="badge badge-primary">Level ${char.level}</span>
+            <span class="badge badge-muted">
+              💰 <input type="number" id="gold-input" value="${char.gold ?? 0}" min="0"
+                         class="gold-input" title="Edit gold" /> gp
+            </span>
+            <span class="badge badge-muted">🎒 ${char.inventory?.length ?? 0} items</span>
+          </div>
+
+          <!-- XP bar -->
+          <div style="margin-bottom:0.8rem;">
+            <div style="font-family:var(--font-ui);font-size:0.72rem;color:var(--color-text-faint);margin-bottom:0.2rem;">
+              XP: ${char.xp ?? 0} / ${xpNxt}
+              ${char.level >= 20 ? '(Max Level)' : ''}
+            </div>
+            <div class="progress-bar" style="height:4px;">
+              <div class="progress-bar-fill" style="width:${xpPct}%;background:var(--color-accent);"></div>
+            </div>
+          </div>
+
+          <!-- HP controls -->
+          <div style="margin-bottom:0.65rem;">
+            <div class="hp-controls" style="margin-bottom:0.35rem;">
+              <button class="btn btn-sm btn-ghost" data-hp="-10" title="Deal 10 damage">−10</button>
+              <button class="btn btn-sm btn-ghost" data-hp="-5"  title="Deal 5 damage"> −5</button>
+              <button class="btn btn-sm btn-ghost" data-hp="-1"  title="Deal 1 damage"> −1</button>
+              <div class="hp-display-big">❤️ ${hp}/${mhp}</div>
+              <button class="btn btn-sm btn-ghost" data-hp="+1"  title="Heal 1">+1</button>
+              <button class="btn btn-sm btn-ghost" data-hp="+5"  title="Heal 5">+5</button>
+              <button class="btn btn-sm btn-ghost" data-hp="+10" title="Heal 10">+10</button>
+              <span style="font-family:var(--font-ui);font-size:0.82rem;color:var(--color-text-muted);margin-left:0.25rem;">
+                🛡️ AC ${char.stats?.ac ?? 10}
+              </span>
+            </div>
+            <div class="progress-bar">
+              <div class="progress-bar-fill ${hpC}" style="width:${hpPct}%"></div>
+            </div>
+          </div>
+
+          <!-- Conditions -->
+          <div>
+            <div class="conditions-list" id="cond-list" style="margin-bottom:0.4rem;">
+              ${condHtml}
+            </div>
+            <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+              <select id="cond-select" style="width:auto;font-size:0.78rem;padding:0.3em 1.5em 0.3em 0.5em;">
+                <option value="">Add condition…</option>
+                ${CONDITIONS.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}
+              </select>
+              <button class="btn btn-ghost btn-sm" id="cond-add-btn">＋</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Tabs ── -->
+      <div class="tabs" role="tablist" style="margin-bottom:0;">
+        <button class="tab-btn ${activeTab==='stats'     ?'active':''}" data-tab="stats"     role="tab">📊 Stats</button>
+        <button class="tab-btn ${activeTab==='inventory' ?'active':''}" data-tab="inventory" role="tab">🎒 Inventory (${(char.inventory??[]).length})</button>
+        <button class="tab-btn ${activeTab==='log'       ?'active':''}" data-tab="log"       role="tab">📜 Log (${(char.adventureLog??[]).length})</button>
+        <button class="tab-btn ${activeTab==='skills'    ?'active':''}" data-tab="skills"    role="tab">⚔️ Skills</button>
+      </div>
+
+      <!-- ── Tab panels ── -->
+      <div class="tab-panel ${activeTab==='stats'     ?'active':''}" id="tab-stats"    >${statsTabHtml(char)}</div>
+      <div class="tab-panel ${activeTab==='inventory' ?'active':''}" id="tab-inventory">${inventoryTabHtml(char)}</div>
+      <div class="tab-panel ${activeTab==='log'       ?'active':''}" id="tab-log"      >${logTabHtml(char)}</div>
+      <div class="tab-panel ${activeTab==='skills'    ?'active':''}" id="tab-skills"   >${skillsTabHtml(char)}</div>
+    </div>
+  `;
+
+  wireDetail(char);
+}
+
+// ── Tab content builders ──────────────────────────────────────
+
+function statsTabHtml(char) {
+  const s = char.stats ?? {};
+  const STATS = ['strength','dexterity','constitution','intelligence','wisdom','charisma'];
+
+  return `
+    <div class="stat-grid" style="margin-bottom:1.5rem;">
+      ${STATS.map(k => `
+        <div class="stat-block">
+          <span class="stat-label">${k.slice(0,3).toUpperCase()}</span>
+          <span class="stat-value">${s[k] ?? 10}</span>
+          <span class="stat-modifier">${formatModifier(s[k] ?? 10)}</span>
+        </div>`).join('')}
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:0.75rem;margin-bottom:1.5rem;">
+      <div class="card" style="padding:0.75rem;text-align:center;">
+        <div class="stat-label">Proficiency</div>
+        <div style="font-family:var(--font-display);font-size:1.4rem;color:var(--color-accent);">+${getProficiencyBonus(char.level)}</div>
+      </div>
+      <div class="card" style="padding:0.75rem;text-align:center;">
+        <div class="stat-label">Initiative</div>
+        <div style="font-family:var(--font-display);font-size:1.4rem;color:var(--color-primary);">${formatModifier(s.dexterity ?? 10)}</div>
+      </div>
+      <div class="card" style="padding:0.75rem;text-align:center;">
+        <div class="stat-label">Passive Perc.</div>
+        <div style="font-family:var(--font-display);font-size:1.4rem;color:var(--color-primary);">${10 + getModifier(s.wisdom ?? 10)}</div>
+      </div>
+      <div class="card" style="padding:0.75rem;text-align:center;">
+        <div class="stat-label">Spell Save DC</div>
+        <div style="font-family:var(--font-display);font-size:1.4rem;color:var(--color-primary);">${8 + getProficiencyBonus(char.level) + getModifier(s.intelligence ?? 10)}</div>
+      </div>
+    </div>
+
+    ${char.backstory ? `
+      <div class="card">
+        <div class="card-header"><span class="card-title">📜 Backstory</span></div>
+        <p style="font-style:italic;color:var(--color-text-muted);line-height:1.75;font-family:var(--font-body);font-size:1rem;">
+          ${escapeHtml(char.backstory)}
+        </p>
+      </div>
+    ` : ''}
+  `;
+}
+
+function inventoryTabHtml(char) {
+  const inv = char.inventory ?? [];
+
+  const addBtn = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+      <span style="font-family:var(--font-ui);font-size:0.8rem;color:var(--color-text-muted);">
+        ${inv.length} item${inv.length !== 1 ? 's' : ''}
+      </span>
+      <button class="btn btn-primary btn-sm" id="add-item-btn">＋ Add Item</button>
+    </div>`;
+
+  if (inv.length === 0) return addBtn + `
+    <div class="empty-state" style="padding:3rem 1rem;">
+      <div class="empty-state-icon">🎒</div>
+      <div class="empty-state-title">Empty Sack</div>
+      <div class="empty-state-text">No items yet. Add from the library or create something new.</div>
+    </div>`;
+
+  const cards = inv.map(slot => {
+    const item = getItem(slot.itemId);
+    if (!item) return '';
+    const icon = TYPE_ICON[item.type] ?? '📦';
+    return `
+      <div class="item-card" data-rarity="${item.rarity}" data-item-id="${item.id}">
+        <div class="item-icon-wrap">
+          ${item.iconBase64
+            ? `<img src="${item.iconBase64}" alt="${escapeHtml(item.name)}" loading="lazy" />`
+            : `<div class="item-icon-ph">${icon}</div>`}
+        </div>
+        <div class="item-card-body">
+          <div class="item-card-name">${escapeHtml(item.name)}</div>
+          <div style="display:flex;gap:0.25rem;flex-wrap:wrap;margin-bottom:0.25rem;">
+            <span class="badge badge-${item.rarity}" style="font-size:0.6rem;">${item.rarity}</span>
+            ${slot.quantity > 1 ? `<span class="badge badge-muted" style="font-size:0.6rem;">×${slot.quantity}</span>` : ''}
+          </div>
+          ${item.stats?.damage     ? `<div class="item-card-stat">⚔️ ${escapeHtml(item.stats.damage)}</div>` : ''}
+          ${item.stats?.armorClass ? `<div class="item-card-stat">🛡️ +${item.stats.armorClass} AC</div>` : ''}
+          ${item.stats?.effect     ? `<div class="item-card-stat">${escapeHtml(truncate(item.stats.effect, 36))}</div>` : ''}
+        </div>
+        <div class="item-card-actions">
+          <button class="btn btn-ghost item-view-btn" data-iid="${item.id}">👁</button>
+          <button class="btn btn-danger item-drop-btn" data-iid="${item.id}">Drop</button>
+        </div>
+      </div>`;
+  }).join('');
+
+  return addBtn + `<div class="inv-grid">${cards}</div>`;
+}
+
+function logTabHtml(char) {
+  const log = [...(char.adventureLog ?? [])].reverse();
+  return `
+    <div style="display:flex;justify-content:flex-end;margin-bottom:1rem;">
+      <button class="btn btn-ghost btn-sm" id="add-log-btn">＋ Add Entry</button>
+    </div>
+    <div class="scroll-area" style="max-height:55vh;">
+      ${log.length === 0
+        ? `<div class="empty-state" style="padding:2.5rem 1rem;">
+             <div class="empty-state-icon">📜</div>
+             <div class="empty-state-text">No log entries yet. Adventures will be recorded here.</div>
+           </div>`
+        : log.map((entry, i) => `
+            <div style="display:flex;gap:1rem;align-items:flex-start;padding:0.75rem 0.25rem;
+                        ${i < log.length-1 ? 'border-bottom:1px solid var(--color-border);' : ''}">
+              <span style="color:var(--color-primary-dark);flex-shrink:0;">📜</span>
+              <div style="font-family:var(--font-body);font-size:0.92rem;line-height:1.65;color:var(--color-text);">
+                ${escapeHtml(entry)}
+              </div>
+            </div>`).join('')}
+    </div>`;
+}
+
+function skillsTabHtml(char) {
+  const prof = getProficiencyBonus(char.level);
+  const s    = char.stats ?? {};
+  const profSkills = char.skills ?? [];
+
+  return `
+    <div class="skills-grid">
+      ${SKILLS.map(skill => {
+        const isProficient = profSkills.includes(skill.name);
+        const abilScore    = s[skill.ability] ?? 10;
+        const total        = getModifier(abilScore) + (isProficient ? prof : 0);
+        const id           = `skill-${skill.name.replace(/\s/g,'-')}`;
+        return `
+          <div class="skill-row">
+            <input type="checkbox" id="${id}" data-skill="${escapeHtml(skill.name)}"
+                   ${isProficient ? 'checked' : ''}
+                   style="width:15px;height:15px;accent-color:var(--color-primary);cursor:pointer;flex-shrink:0;" />
+            <label for="${id}" class="skill-name">
+              ${escapeHtml(skill.name)}
+              <span class="skill-ability">(${skill.ability.slice(0,3).toUpperCase()})</span>
+            </label>
+            <span class="skill-mod" style="color:${total>=0?'var(--color-success)':'var(--color-danger)'};">
+              ${total >= 0 ? '+' : ''}${total}
+            </span>
+          </div>`;
+      }).join('')}
+    </div>
+    <div style="margin-top:0.75rem;font-family:var(--font-ui);font-size:0.78rem;color:var(--color-text-faint);">
+      Proficiency Bonus: +${prof} · Checked = proficient
+    </div>`;
+}
+
+// ── Wire detail events ────────────────────────────────────────
+function wireDetail(char) {
+  // Gold
+  document.getElementById('gold-input')?.addEventListener('change', e => {
+    const updated = getCharacter(char.id);
+    updated.gold  = Math.max(0, parseInt(e.target.value) || 0);
+    saveCharacter(updated);
+    renderSidebar();
+  });
+
+  // HP buttons
+  document.querySelectorAll('[data-hp]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      updateCharacterHP(char.id, parseInt(btn.dataset.hp));
+      renderDetail();
+      renderSidebar();
+    });
+  });
+
+  // Conditions: remove
+  document.querySelectorAll('[data-cond-remove]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const updated = getCharacter(char.id);
+      updated.conditions = (updated.conditions ?? []).filter(c => c !== btn.dataset.condRemove);
+      saveCharacter(updated);
+      renderDetail();
+    });
+  });
+
+  // Conditions: add
+  document.getElementById('cond-add-btn')?.addEventListener('click', () => {
+    const sel = document.getElementById('cond-select');
+    const val = sel.value;
+    if (!val) return;
+    const updated = getCharacter(char.id);
+    if (!(updated.conditions ?? []).includes(val)) {
+      updated.conditions = [...(updated.conditions ?? []), val];
+      saveCharacter(updated);
+    }
+    sel.value = '';
+    renderDetail();
+  });
+
+  // Tabs
+  document.querySelectorAll('[data-tab]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      activeTab = btn.dataset.tab;
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === activeTab));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === `tab-${activeTab}`));
+    });
+  });
+
+  // Inventory: add
+  document.getElementById('add-item-btn')?.addEventListener('click', openAddItemModal);
+
+  // Inventory: view & drop
+  document.querySelectorAll('.item-view-btn').forEach(btn => {
+    btn.addEventListener('click', () => openItemDetail(btn.dataset.iid));
+  });
+  document.querySelectorAll('.item-drop-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (!confirm('Drop this item?')) return;
+      updateCharacterInventory(char.id, btn.dataset.iid, 'remove');
+      renderDetail();
+      renderSidebar();
+      showToast('Item dropped.', 'info');
+    });
+  });
+
+  // Log
+  document.getElementById('add-log-btn')?.addEventListener('click', openLogModal);
+
+  // Skills
+  document.querySelectorAll('[data-skill]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const updated = getCharacter(char.id);
+      const name    = cb.dataset.skill;
+      updated.skills = updated.skills ?? [];
+      if (cb.checked) {
+        if (!updated.skills.includes(name)) updated.skills.push(name);
+      } else {
+        updated.skills = updated.skills.filter(s => s !== name);
+      }
+      saveCharacter(updated);
+    });
+  });
+}
+
+// ── Item detail modal ─────────────────────────────────────────
+function openItemDetail(itemId) {
+  const item = getItem(itemId);
+  if (!item) { showToast('Item not found.', 'error'); return; }
+  viewingItemId = itemId;
+
+  const icon = TYPE_ICON[item.type] ?? '📦';
+
+  document.getElementById('idet-title').textContent = item.name;
+  document.getElementById('idet-body').innerHTML = `
+    <div style="display:grid;grid-template-columns:148px 1fr;gap:1.5rem;align-items:start;">
+
+      <!-- Icon column -->
+      <div>
+        <div class="idet-icon-box" id="idet-icon-box">
+          ${item.iconBase64
+            ? `<img src="${item.iconBase64}" alt="${escapeHtml(item.name)}" style="width:100%;height:100%;object-fit:cover;" />`
+            : `<div style="font-size:3rem;opacity:0.4;">${icon}</div>`}
+        </div>
+        <button class="btn btn-ghost btn-sm" id="idet-gen-icon" style="margin-top:0.5rem;width:128px;font-size:0.72rem;">
+          ${item.iconBase64 ? '🔄 Regen Icon' : '🎨 Generate Icon'}
+        </button>
+      </div>
+
+      <!-- Info column -->
+      <div>
+        <div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.75rem;">
+          <span class="badge badge-${item.rarity}">${capitalize(item.rarity)}</span>
+          <span class="badge badge-muted">${icon} ${capitalize(item.type)}</span>
+          ${item.stats?.value ? `<span class="badge badge-muted">💰 ${item.stats.value} gp</span>` : ''}
+        </div>
+
+        ${item.description ? `
+          <p style="color:var(--color-text-muted);margin-bottom:0.75rem;font-size:0.9rem;">
+            ${escapeHtml(item.description)}
+          </p>` : ''}
+
+        ${item.lore ? `
+          <div style="font-style:italic;font-family:var(--font-body);color:var(--color-text-muted);
+                      line-height:1.75;font-size:0.95rem;padding:0.75rem;
+                      background:var(--color-surface-2);border-radius:var(--radius);
+                      border-left:2px solid var(--color-primary-dark);margin-bottom:0.75rem;">
+            "${escapeHtml(item.lore)}"
+          </div>` : ''}
+
+        ${(item.stats?.damage || item.stats?.armorClass || item.stats?.effect) ? `
+          <div class="card" style="padding:0.75rem;">
+            <div style="font-family:var(--font-ui);font-size:0.72rem;text-transform:uppercase;
+                        letter-spacing:0.06em;color:var(--color-text-faint);margin-bottom:0.4rem;">Stats</div>
+            ${item.stats.damage     ? `<div style="font-family:var(--font-ui);font-size:0.85rem;margin-bottom:0.2rem;">⚔️ Damage: <strong>${escapeHtml(item.stats.damage)}</strong></div>` : ''}
+            ${item.stats.armorClass ? `<div style="font-family:var(--font-ui);font-size:0.85rem;margin-bottom:0.2rem;">🛡️ AC Bonus: <strong>+${item.stats.armorClass}</strong></div>` : ''}
+            ${item.stats.effect     ? `<div style="font-family:var(--font-ui);font-size:0.85rem;margin-bottom:0.2rem;">✨ Effect: <strong>${escapeHtml(item.stats.effect)}</strong></div>` : ''}
+          </div>` : ''}
+      </div>
+    </div>`;
+
+  // Wire icon generation
+  document.getElementById('idet-gen-icon')?.addEventListener('click', () => generateItemIcon(item));
+
+  document.getElementById('item-detail-modal').classList.remove('hidden');
+}
+
+async function generateItemIcon(item) {
+  showLoading('Forging item icon…');
+  try {
+    const base64 = await generateIconBase64(buildIconPrompt(item));
+    item.iconBase64 = base64;
+    saveItem(item);
+    // Update icon in modal immediately
+    const box = document.getElementById('idet-icon-box');
+    if (box) box.innerHTML = `<img src="${base64}" alt="${escapeHtml(item.name)}" style="width:100%;height:100%;object-fit:cover;" />`;
+    showToast('Icon generated and saved!', 'success');
+    // Refresh inventory view if open
+    if (activeTab === 'inventory') {
+      const t = document.getElementById('tab-inventory');
+      if (t) t.innerHTML = inventoryTabHtml(getCharacter(selectedCharId));
+    }
+  } catch (err) {
+    showToast('Icon generation failed: ' + err.message, 'error');
+  } finally {
+    hideLoading();
+  }
+}
+
+// Item detail modal close / drop
+document.getElementById('idet-close')?.addEventListener('click',   () => document.getElementById('item-detail-modal').classList.add('hidden'));
+document.getElementById('idet-close-2')?.addEventListener('click', () => document.getElementById('item-detail-modal').classList.add('hidden'));
+document.getElementById('item-detail-modal')?.addEventListener('click', e => {
+  if (e.target === document.getElementById('item-detail-modal'))
+    document.getElementById('item-detail-modal').classList.add('hidden');
+});
+document.getElementById('idet-drop-btn')?.addEventListener('click', () => {
+  if (!viewingItemId || !selectedCharId) return;
+  if (!confirm('Drop this item from inventory?')) return;
+  updateCharacterInventory(selectedCharId, viewingItemId, 'remove');
+  document.getElementById('item-detail-modal').classList.add('hidden');
+  renderDetail(); renderSidebar();
+  showToast('Item dropped.', 'info');
+});
+
+// ── Add Item modal ────────────────────────────────────────────
+function openAddItemModal() {
+  newItemIcon = '';
+  // Reset form
+  ['ni-name','ni-damage','ni-ac','ni-effect','ni-desc','ni-lore'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  document.getElementById('ni-rarity').value = 'common';
+  document.getElementById('ni-type').value   = 'weapon';
+  document.getElementById('ni-value').value  = '';
+  document.getElementById('ni-icon-preview').classList.add('hidden');
+  document.getElementById('ni-gen-hint').textContent = '';
+
+  refreshItemSearch('');
+  document.getElementById('add-item-modal').classList.remove('hidden');
+  document.getElementById('item-search-input').focus();
+}
+
+function closeAddItemModal() {
+  document.getElementById('add-item-modal').classList.add('hidden');
+}
+
+function refreshItemSearch(query) {
+  const all  = getAllItems();
+  const char = getCharacter(selectedCharId);
+  if (!char) return;
+
+  const filtered = query.trim()
+    ? all.filter(i => i.name.toLowerCase().includes(query.toLowerCase()))
+    : all;
+
+  const container = document.getElementById('item-search-results');
+  if (filtered.length === 0) {
+    container.innerHTML = `<div style="color:var(--color-text-faint);font-size:0.8rem;font-style:italic;padding:0.4rem 0;">
+      ${all.length === 0 ? 'No items in library yet — create one below.' : 'No matches found.'}
+    </div>`;
+    return;
+  }
+
+  container.innerHTML = `<div class="search-result-list">` +
+    filtered.map(item => {
+      const already = (char.inventory ?? []).some(s => s.itemId === item.id);
+      const icon    = TYPE_ICON[item.type] ?? '📦';
+      return `
+        <div class="search-result-row">
+          <span style="font-size:1.2rem;">${icon}</span>
+          <div style="flex:1;min-width:0;">
+            <div style="font-family:var(--font-display);font-size:0.82rem;">${escapeHtml(item.name)}</div>
+            <div style="font-family:var(--font-ui);font-size:0.68rem;color:var(--color-text-faint);">
+              ${item.type} · ${item.rarity}${item.stats?.damage ? ` · ${item.stats.damage}` : ''}
+            </div>
+          </div>
+          <button class="btn btn-primary btn-sm" data-lib-add="${item.id}" style="flex-shrink:0;">
+            ${already ? '+1 more' : 'Add'}
+          </button>
+        </div>`;
+    }).join('') + `</div>`;
+
+  container.querySelectorAll('[data-lib-add]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      updateCharacterInventory(selectedCharId, btn.dataset.libAdd, 'add');
+      closeAddItemModal();
+      activeTab = 'inventory';
+      renderDetail(); renderSidebar();
+      showToast('Item added to inventory!', 'success');
+    });
+  });
+}
+
+// Add item modal events
+document.getElementById('item-search-input')?.addEventListener('input', e => refreshItemSearch(e.target.value));
+document.getElementById('ait-close')?.addEventListener('click', closeAddItemModal);
+document.getElementById('ait-cancel')?.addEventListener('click', closeAddItemModal);
+document.getElementById('add-item-modal')?.addEventListener('click', e => {
+  if (e.target === document.getElementById('add-item-modal')) closeAddItemModal();
+});
+
+document.getElementById('ni-gen-lore-btn')?.addEventListener('click', async () => {
+  const name = document.getElementById('ni-name').value.trim();
+  if (!name) { showToast('Enter an item name first.', 'error'); return; }
+  if (!hasGeminiKey()) { showToast('Add your Gemini API key in ⚙️ Settings first.', 'error'); return; }
+
+  const type   = document.getElementById('ni-type').value;
+  const rarity = document.getElementById('ni-rarity').value;
+  const desc   = document.getElementById('ni-desc').value.trim();
+  const hint   = document.getElementById('ni-gen-hint');
+
+  showLoading('Weaving item lore…');
+  try {
+    const prompt = `Write a compelling 2-sentence dark fantasy lore backstory for this DND item:
+Name: ${name}
+Type: ${type}
+Rarity: ${rarity}
+${desc ? `Description: ${desc}` : ''}
+Write only the lore text, no titles or preamble. Make it atmospheric and specific.`;
+    const result = await geminiGenerate(prompt);
+    document.getElementById('ni-lore').value = result;
+    if (hint) hint.textContent = '✓ Lore generated.';
+    showToast('Lore generated!', 'success');
+  } catch (err) {
+    showToast('Lore generation failed: ' + err.message, 'error');
+  } finally {
+    hideLoading();
+  }
+});
+
+document.getElementById('ni-gen-icon-btn')?.addEventListener('click', async () => {
+  const name   = document.getElementById('ni-name').value.trim();
+  if (!name) { showToast('Enter an item name first.', 'error'); return; }
+  const type   = document.getElementById('ni-type').value;
+  const rarity = document.getElementById('ni-rarity').value;
+  const hint   = document.getElementById('ni-gen-hint');
+
+  showLoading('Forging item icon…');
+  try {
+    const fakeItem = { name, type, rarity, description: document.getElementById('ni-desc').value };
+    const base64   = await generateIconBase64(buildIconPrompt(fakeItem));
+    newItemIcon    = base64;
+    const preview  = document.getElementById('ni-icon-preview');
+    const img      = document.getElementById('ni-icon-img');
+    img.src        = base64;
+    preview.classList.remove('hidden');
+    if (hint) hint.textContent = '✓ Icon generated.';
+    showToast('Icon generated!', 'success');
+  } catch (err) {
+    showToast('Icon generation failed: ' + err.message, 'error');
+  } finally {
+    hideLoading();
+  }
+});
+
+document.getElementById('ait-save')?.addEventListener('click', () => {
+  const name = document.getElementById('ni-name').value.trim();
+  if (!name) { showToast('Enter an item name.', 'error'); return; }
+
+  const damage = document.getElementById('ni-damage').value.trim();
+  const ac     = parseInt(document.getElementById('ni-ac').value) || 0;
+  const effect = document.getElementById('ni-effect').value.trim();
+  const value  = parseInt(document.getElementById('ni-value').value) || 0;
+
+  const item = {
+    id:          uuid(),
+    name,
+    type:        document.getElementById('ni-type').value,
+    rarity:      document.getElementById('ni-rarity').value,
+    description: document.getElementById('ni-desc').value.trim(),
+    lore:        document.getElementById('ni-lore').value.trim(),
+    iconBase64:  newItemIcon,
+    iconPrompt:  name,
+    stats: {
+      ...(damage ? { damage }     : {}),
+      ...(ac     ? { armorClass: ac } : {}),
+      ...(effect ? { effect }     : {}),
+      ...(value  ? { value }      : {}),
+    },
+    createdAt:   Date.now(),
+  };
+
+  saveItem(item);
+  updateCharacterInventory(selectedCharId, item.id, 'add');
+  closeAddItemModal();
+  activeTab = 'inventory';
+  renderDetail(); renderSidebar();
+  showToast(`${item.name} added to inventory!`, 'success');
+});
+
+// ── Add Log Entry modal ───────────────────────────────────────
+function openLogModal() {
+  document.getElementById('log-text').value = '';
+  document.getElementById('log-modal').classList.remove('hidden');
+  document.getElementById('log-text').focus();
+}
+
+function closeLogModal() {
+  document.getElementById('log-modal').classList.add('hidden');
+}
+
+document.getElementById('log-close')?.addEventListener('click',  closeLogModal);
+document.getElementById('log-cancel')?.addEventListener('click', closeLogModal);
+document.getElementById('log-modal')?.addEventListener('click', e => {
+  if (e.target === document.getElementById('log-modal')) closeLogModal();
+});
+
+document.getElementById('log-save')?.addEventListener('click', () => {
+  const text = document.getElementById('log-text').value.trim();
+  if (!text) { showToast('Write something first.', 'error'); return; }
+  addToAdventureLog(selectedCharId, text);
+  closeLogModal();
+  activeTab = 'log';
+  renderDetail();
+  showToast('Log entry saved.', 'success');
+});
+
+// ── Start ─────────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>

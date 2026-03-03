@@ -1,0 +1,1259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Create Character — DND AI</title>
+  <meta name="description" content="Build your DND hero — choose race, class, roll ability scores, generate a portrait and backstory with AI." />
+  <meta property="og:title"       content="DND AI — Create a Character" />
+  <meta property="og:description" content="Forge your hero. Race, class, backstory, and AI-generated portrait await." />
+  <meta property="og:type"        content="website" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpolygon points='16,2 30,10 30,22 16,30 2,22 2,10' fill='%230d0d0f' stroke='%23c9a84c' stroke-width='2'/%3E%3Ctext x='16' y='21' text-anchor='middle' font-size='14' fill='%23c9a84c' font-family='serif'%3E20%3C/text%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/components.css" />
+  <link rel="stylesheet" href="css/layout.css" />
+  <style>
+    /* ── Wizard-specific styles ── */
+    .wizard-step { animation: fadeIn 0.3s ease; }
+
+    /* Option cards (race / class selector) */
+    .option-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+      gap: 0.5rem;
+      margin-top: 0.4rem;
+    }
+    .option-card { position: relative; }
+    .option-card input[type="radio"] { position: absolute; opacity: 0; width: 0; height: 0; }
+    .option-label {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      padding: 0.75rem 0.5rem;
+      background: var(--color-surface-2);
+      border: 2px solid var(--color-border);
+      border-radius: var(--radius);
+      cursor: pointer;
+      transition: all var(--transition);
+      height: 100%;
+      gap: 0.2rem;
+    }
+    .option-label:hover { border-color: var(--color-border-light); }
+    .option-card input:checked + .option-label {
+      border-color: var(--color-primary);
+      background: var(--color-primary-glow);
+      box-shadow: 0 0 0 1px var(--color-primary-dark);
+    }
+    .option-icon  { font-size: 1.5rem; }
+    .option-name  { font-family: var(--font-display); font-size: 0.78rem; font-weight: 600; color: var(--color-text); }
+    .option-desc  { font-family: var(--font-ui); font-size: 0.65rem; color: var(--color-text-faint); line-height: 1.3; }
+    .option-badge {
+      display: inline-block; margin-top: 0.2rem;
+      font-family: var(--font-ui); font-size: 0.62rem; font-weight: 700;
+      color: var(--color-primary); background: var(--color-surface-3);
+      border: 1px solid var(--color-border); border-radius: 3px; padding: 0.05em 0.4em;
+    }
+
+    /* Score method toggle */
+    .method-toggle {
+      display: flex; background: var(--color-surface-2);
+      border: 1px solid var(--color-border); border-radius: var(--radius); padding: 3px; gap: 3px;
+    }
+    .method-btn {
+      flex: 1; padding: 0.5em 0.5em; border: none;
+      border-radius: calc(var(--radius) - 2px);
+      background: transparent; color: var(--color-text-muted);
+      cursor: pointer; font-family: var(--font-ui); font-size: 0.8rem; font-weight: 500;
+      transition: all var(--transition);
+    }
+    .method-btn.active { background: var(--color-primary); color: #1a1208; font-weight: 700; }
+    .method-btn:hover:not(.active) { color: var(--color-text); }
+
+    /* Pool chips */
+    .pool-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+    .pool-chip {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 40px; height: 40px; padding: 0 0.5rem;
+      background: var(--color-surface-3); border: 1px solid var(--color-border);
+      border-radius: var(--radius);
+      font-family: var(--font-display); font-size: 0.95rem; font-weight: 700;
+      color: var(--color-primary); transition: opacity 0.2s;
+    }
+    .pool-chip.used { opacity: 0.25; text-decoration: line-through; }
+
+    /* Score assignment rows */
+    .score-row {
+      display: flex; align-items: center; gap: 0.75rem;
+      padding: 0.6rem 0.85rem;
+      background: var(--color-surface-2); border: 1px solid var(--color-border);
+      border-radius: var(--radius);
+    }
+    .score-stat-label { width: 70px; flex-shrink: 0; }
+    .score-stat-abbr  { font-family: var(--font-display); font-weight: 700; font-size: 0.9rem; display: block; }
+    .score-stat-name  { font-family: var(--font-ui); font-size: 0.65rem; color: var(--color-text-faint); }
+    .score-select     { flex: 1; }
+    .score-val        {
+      font-family: var(--font-display); font-size: 1.2rem; font-weight: 700;
+      color: var(--color-primary); min-width: 38px; text-align: center;
+    }
+    .score-mod        {
+      font-family: var(--font-ui); font-size: 0.85rem; font-weight: 600;
+      min-width: 34px; text-align: center; color: var(--color-text-faint);
+    }
+
+    /* Manual score grid */
+    .manual-stat {
+      background: var(--color-surface-2); border: 1px solid var(--color-border);
+      border-radius: var(--radius); padding: 0.75rem 0.5rem; text-align: center;
+    }
+    .manual-score-input {
+      width: 70px; text-align: center;
+      font-family: var(--font-display); font-size: 1.5rem; font-weight: 700;
+      background: transparent; border: none; border-bottom: 2px solid var(--color-border);
+      color: var(--color-primary); outline: none; padding: 0.1em 0;
+      transition: border-color var(--transition);
+    }
+    .manual-score-input:focus { border-bottom-color: var(--color-primary); }
+
+    /* Portrait area */
+    .portrait-area {
+      border: 2px dashed var(--color-border); border-radius: var(--radius-lg);
+      padding: 2rem; text-align: center; cursor: pointer;
+      transition: all var(--transition); background: var(--color-surface-2);
+    }
+    .portrait-area:hover { border-color: var(--color-primary-dark); background: var(--color-primary-glow); }
+    .portrait-area.has-portrait { border-style: solid; border-color: var(--color-primary-dark); padding: 0; overflow: hidden; }
+    #portrait-preview-img { width: 100%; max-height: 280px; object-fit: cover; display: none; }
+
+    /* Roll result animation */
+    @keyframes rollIn {
+      from { opacity: 0; transform: translateY(-4px) scale(0.9); }
+      to   { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    .pool-chip.new { animation: rollIn 0.25s ease; }
+
+    /* Wizard nav */
+    .wizard-nav {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--color-border);
+    }
+
+    /* Review card portrait */
+    .review-portrait {
+      width: 120px; height: 120px; border-radius: var(--radius);
+      object-fit: cover; border: 2px solid var(--color-primary-dark);
+      flex-shrink: 0; background: var(--color-surface-2);
+      display: flex; align-items: center; justify-content: center; font-size: 3rem;
+    }
+
+    @media (max-width: 640px) {
+      .option-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); }
+      .score-row   { flex-wrap: wrap; gap: 0.5rem; }
+      .method-toggle { flex-wrap: wrap; }
+      .method-btn  { min-height: 40px; font-size: 0.75rem; }
+      /* Wizard container: tighter padding */
+      .page-container-sm { padding: 1rem 0.85rem; }
+    }
+
+    @media (max-width: 420px) {
+      .option-grid { grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); }
+      .option-icon { font-size: 1.2rem; }
+      .option-name { font-size: 0.72rem; }
+      .option-desc { display: none; } /* hide tiny descriptions on very small screens */
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Navigation ── -->
+<nav class="navbar" role="navigation" aria-label="Main navigation">
+  <a href="index.html" class="navbar-brand">
+    <span class="brand-icon">⚔️</span>DND AI
+  </a>
+  <ul class="navbar-nav" role="list">
+    <li><a href="index.html"            >🏠 Dashboard</a></li>
+    <li><a href="character-create.html"  class="active">✨ Create Character</a></li>
+    <li><a href="character-manager.html"             >🧙 Characters</a></li>
+    <li><a href="story-manager.html"                 >📖 Campaigns</a></li>
+    <li><a href="item-library.html"                  >📦 Items</a></li>
+    <li><a href="game.html"                          >⚔️ Play</a></li>
+  </ul>
+  <div class="navbar-actions">
+    <button class="btn btn-ghost btn-sm" id="settings-btn">⚙️ Settings</button>
+  </div>
+  <button class="hamburger" id="hamburger-btn" aria-label="Open menu">☰</button>
+</nav>
+
+<div class="nav-drawer" id="nav-drawer" aria-hidden="true">
+  <ul class="navbar-nav" role="list">
+    <li><a href="index.html"             >🏠 Dashboard</a></li>
+    <li><a href="character-create.html"   class="active">✨ Create Character</a></li>
+    <li><a href="character-manager.html"             >🧙 Characters</a></li>
+    <li><a href="story-manager.html"                 >📖 Campaigns</a></li>
+    <li><a href="item-library.html"                  >📦 Items</a></li>
+    <li><a href="game.html"                          >⚔️ Play</a></li>
+  </ul>
+</div>
+<div class="nav-drawer-overlay" id="nav-overlay"></div>
+
+<!-- ── Main ── -->
+<main class="page-wrapper">
+  <div class="page-container page-container-sm">
+
+    <div class="page-header">
+      <h1 class="page-title">✨ Forge Your Hero</h1>
+      <p class="page-subtitle">Shape a legend from the threads of fate</p>
+    </div>
+
+    <!-- Step progress -->
+    <div class="step-progress" id="step-progress" style="margin-bottom: 2rem;">
+      <div class="step-item active" data-step="1">
+        <div class="step-circle">1</div>
+        <span class="step-label">Identity</span>
+      </div>
+      <div class="step-item" data-step="2">
+        <div class="step-circle">2</div>
+        <span class="step-label">Attributes</span>
+      </div>
+      <div class="step-item" data-step="3">
+        <div class="step-circle">3</div>
+        <span class="step-label">Story</span>
+      </div>
+      <div class="step-item" data-step="4">
+        <div class="step-circle">4</div>
+        <span class="step-label">Review</span>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════
+         STEP 1 — IDENTITY
+         ════════════════════════════════════════════ -->
+    <div class="wizard-step" id="step-1">
+
+      <div class="card" style="margin-bottom: 1.25rem;">
+        <div class="card-header"><span class="card-title">⚔️ Who Are You?</span></div>
+
+        <div class="form-group">
+          <label for="char-name">Character Name <span style="color:var(--color-danger)">*</span></label>
+          <input type="text" id="char-name" placeholder="e.g. Thalindra Moonwhisper" maxlength="60" autocomplete="off" />
+        </div>
+
+        <div class="form-group">
+          <label for="char-level">Starting Level</label>
+          <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <input type="number" id="char-level" min="1" max="20" value="1" style="width: 80px;" />
+            <span id="level-desc" style="font-family: var(--font-ui); font-size: 0.82rem; color: var(--color-text-muted);">
+              A freshly forged adventurer
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Race -->
+      <div class="card" style="margin-bottom: 1.25rem;">
+        <div class="card-header">
+          <span class="card-title">🌍 Choose Your Race</span>
+          <span id="selected-race-badge" class="badge badge-primary hidden"></span>
+        </div>
+        <div class="option-grid" id="race-grid">
+          <!-- Rendered by JS -->
+        </div>
+      </div>
+
+      <!-- Class -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">🛡️ Choose Your Class</span>
+          <span id="selected-class-badge" class="badge badge-accent hidden"></span>
+        </div>
+        <div class="option-grid" id="class-grid">
+          <!-- Rendered by JS -->
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ════════════════════════════════════════════
+         STEP 2 — ABILITY SCORES
+         ════════════════════════════════════════════ -->
+    <div class="wizard-step" id="step-2" hidden>
+
+      <div class="card" style="margin-bottom: 1.25rem;">
+        <div class="card-header"><span class="card-title">🎲 Ability Scores</span></div>
+
+        <!-- Method toggle -->
+        <div class="form-group">
+          <label>Scoring Method</label>
+          <div class="method-toggle">
+            <button class="method-btn active" data-method="standard">📊 Standard Array</button>
+            <button class="method-btn"        data-method="roll"    >🎲 Roll Dice</button>
+            <button class="method-btn"        data-method="manual"  >✏️ Manual</button>
+          </div>
+          <div id="method-hint" class="form-hint">Standard array: assign 15, 14, 13, 12, 10, 8 to your stats.</div>
+        </div>
+
+        <!-- Roll button (roll mode only) -->
+        <div id="roll-section" style="display: none; margin-bottom: 1rem;">
+          <button class="btn btn-accent" id="roll-all-btn">🎲 Roll All Scores (4d6 drop lowest)</button>
+          <div id="roll-log" style="font-family: var(--font-ui); font-size: 0.78rem; color: var(--color-text-faint); margin-top: 0.5rem; min-height: 1rem;"></div>
+        </div>
+
+        <!-- Pool chips (roll + standard) -->
+        <div id="pool-section" style="margin-bottom: 1rem;">
+          <label style="margin-bottom: 0.4rem; display: block;">Available to Assign</label>
+          <div class="pool-chips" id="pool-chips"></div>
+        </div>
+
+        <!-- Score rows: assign mode (standard + roll) -->
+        <div id="assign-section">
+          <div style="display: flex; flex-direction: column; gap: 0.45rem;">
+
+            <div class="score-row">
+              <div class="score-stat-label">
+                <span class="score-stat-abbr">STR</span>
+                <span class="score-stat-name">Strength</span>
+              </div>
+              <select id="score-select-strength" class="score-select">
+                <option value="">— assign —</option>
+              </select>
+              <div class="score-val" id="val-strength">—</div>
+              <div class="score-mod" id="mod-strength">—</div>
+            </div>
+
+            <div class="score-row">
+              <div class="score-stat-label">
+                <span class="score-stat-abbr">DEX</span>
+                <span class="score-stat-name">Dexterity</span>
+              </div>
+              <select id="score-select-dexterity" class="score-select">
+                <option value="">— assign —</option>
+              </select>
+              <div class="score-val" id="val-dexterity">—</div>
+              <div class="score-mod" id="mod-dexterity">—</div>
+            </div>
+
+            <div class="score-row">
+              <div class="score-stat-label">
+                <span class="score-stat-abbr">CON</span>
+                <span class="score-stat-name">Constitution</span>
+              </div>
+              <select id="score-select-constitution" class="score-select">
+                <option value="">— assign —</option>
+              </select>
+              <div class="score-val" id="val-constitution">—</div>
+              <div class="score-mod" id="mod-constitution">—</div>
+            </div>
+
+            <div class="score-row">
+              <div class="score-stat-label">
+                <span class="score-stat-abbr">INT</span>
+                <span class="score-stat-name">Intelligence</span>
+              </div>
+              <select id="score-select-intelligence" class="score-select">
+                <option value="">— assign —</option>
+              </select>
+              <div class="score-val" id="val-intelligence">—</div>
+              <div class="score-mod" id="mod-intelligence">—</div>
+            </div>
+
+            <div class="score-row">
+              <div class="score-stat-label">
+                <span class="score-stat-abbr">WIS</span>
+                <span class="score-stat-name">Wisdom</span>
+              </div>
+              <select id="score-select-wisdom" class="score-select">
+                <option value="">— assign —</option>
+              </select>
+              <div class="score-val" id="val-wisdom">—</div>
+              <div class="score-mod" id="mod-wisdom">—</div>
+            </div>
+
+            <div class="score-row">
+              <div class="score-stat-label">
+                <span class="score-stat-abbr">CHA</span>
+                <span class="score-stat-name">Charisma</span>
+              </div>
+              <select id="score-select-charisma" class="score-select">
+                <option value="">— assign —</option>
+              </select>
+              <div class="score-val" id="val-charisma">—</div>
+              <div class="score-mod" id="mod-charisma">—</div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Manual inputs -->
+        <div id="manual-section" style="display: none;">
+          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.65rem;">
+
+            <div class="manual-stat">
+              <span class="stat-label" style="margin-bottom:0.4rem;">STR</span>
+              <input type="number" class="manual-score-input" id="manual-strength" min="3" max="20" value="10" />
+              <div class="score-mod" id="mod-m-strength" style="margin-top:0.3rem;">+0</div>
+            </div>
+            <div class="manual-stat">
+              <span class="stat-label" style="margin-bottom:0.4rem;">DEX</span>
+              <input type="number" class="manual-score-input" id="manual-dexterity" min="3" max="20" value="10" />
+              <div class="score-mod" id="mod-m-dexterity" style="margin-top:0.3rem;">+0</div>
+            </div>
+            <div class="manual-stat">
+              <span class="stat-label" style="margin-bottom:0.4rem;">CON</span>
+              <input type="number" class="manual-score-input" id="manual-constitution" min="3" max="20" value="10" />
+              <div class="score-mod" id="mod-m-constitution" style="margin-top:0.3rem;">+0</div>
+            </div>
+            <div class="manual-stat">
+              <span class="stat-label" style="margin-bottom:0.4rem;">INT</span>
+              <input type="number" class="manual-score-input" id="manual-intelligence" min="3" max="20" value="10" />
+              <div class="score-mod" id="mod-m-intelligence" style="margin-top:0.3rem;">+0</div>
+            </div>
+            <div class="manual-stat">
+              <span class="stat-label" style="margin-bottom:0.4rem;">WIS</span>
+              <input type="number" class="manual-score-input" id="manual-wisdom" min="3" max="20" value="10" />
+              <div class="score-mod" id="mod-m-wisdom" style="margin-top:0.3rem;">+0</div>
+            </div>
+            <div class="manual-stat">
+              <span class="stat-label" style="margin-bottom:0.4rem;">CHA</span>
+              <input type="number" class="manual-score-input" id="manual-charisma" min="3" max="20" value="10" />
+              <div class="score-mod" id="mod-m-charisma" style="margin-top:0.3rem;">+0</div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- HP preview -->
+        <div style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--color-border); display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+          <div>
+            <span style="font-family: var(--font-ui); font-size: 0.78rem; color: var(--color-text-faint); text-transform: uppercase; letter-spacing: 0.06em;">Estimated HP</span>
+            <div style="font-family: var(--font-display); font-size: 1.6rem; font-weight: 700; color: var(--color-danger);" id="hp-preview">—</div>
+          </div>
+          <div>
+            <span style="font-family: var(--font-ui); font-size: 0.78rem; color: var(--color-text-faint); text-transform: uppercase; letter-spacing: 0.06em;">Armor Class</span>
+            <div style="font-family: var(--font-display); font-size: 1.6rem; font-weight: 700; color: var(--color-info);" id="ac-preview">10</div>
+          </div>
+          <div style="font-family: var(--font-ui); font-size: 0.78rem; color: var(--color-text-faint); max-width: 260px; line-height: 1.5;">
+            Based on your <strong id="hp-class-label">Fighter</strong>'s hit die and your CON modifier.
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════
+         STEP 3 — BACKSTORY & PORTRAIT
+         ════════════════════════════════════════════ -->
+    <div class="wizard-step" id="step-3" hidden>
+
+      <!-- Backstory -->
+      <div class="card" style="margin-bottom: 1.25rem;">
+        <div class="card-header"><span class="card-title">📜 Backstory</span></div>
+
+        <div class="form-group">
+          <label for="backstory-input">Your Hero's History</label>
+          <textarea id="backstory-input" rows="6"
+                    placeholder="Write your character's backstory, or let AI weave one for you…"></textarea>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+          <button class="btn btn-accent" id="gen-backstory-btn">
+            ✨ Generate Backstory with AI
+          </button>
+          <span style="font-family: var(--font-ui); font-size: 0.78rem; color: var(--color-text-faint);">
+            Requires Gemini API key
+          </span>
+        </div>
+        <div id="backstory-gen-hint" class="form-hint" style="margin-top: 0.5rem;"></div>
+      </div>
+
+      <!-- Portrait -->
+      <div class="card">
+        <div class="card-header"><span class="card-title">🎨 Portrait</span></div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; align-items: start;">
+
+          <!-- Preview -->
+          <div>
+            <label style="margin-bottom: 0.5rem; display: block;">Preview</label>
+            <div class="portrait-area" id="portrait-drop-area">
+              <div id="portrait-placeholder" style="pointer-events: none;">
+                <div style="font-size: 3rem; margin-bottom: 0.5rem; opacity: 0.4;">🧙</div>
+                <div style="font-family: var(--font-ui); font-size: 0.8rem; color: var(--color-text-faint);">
+                  Upload or generate a portrait
+                </div>
+              </div>
+              <img id="portrait-preview-img" alt="Character portrait" style="display: none; width: 100%; max-height: 280px; object-fit: cover;" />
+            </div>
+          </div>
+
+          <!-- Actions -->
+          <div style="display: flex; flex-direction: column; gap: 1rem;">
+
+            <div>
+              <label style="margin-bottom: 0.5rem; display: block;">Upload Image</label>
+              <input type="file" id="portrait-file" accept="image/*" class="hidden" />
+              <button class="btn btn-ghost w-full" id="portrait-upload-btn" style="width: 100%;">
+                📁 Choose File
+              </button>
+              <div class="form-hint">JPG, PNG, WebP — stored in your browser</div>
+            </div>
+
+            <div style="display: flex; align-items: center; gap: 0.5rem; color: var(--color-text-faint); font-family: var(--font-ui); font-size: 0.78rem;">
+              <hr style="flex: 1; border-top: 1px solid var(--color-border);" />
+              <span>or</span>
+              <hr style="flex: 1; border-top: 1px solid var(--color-border);" />
+            </div>
+
+            <div>
+              <button class="btn btn-primary w-full" id="gen-portrait-btn" style="width: 100%;">
+                🎨 Generate Portrait with AI
+              </button>
+              <div class="form-hint" style="margin-top: 0.4rem;">
+                Free via Pollinations.ai — no key needed
+              </div>
+            </div>
+
+            <div id="portrait-status" style="font-family: var(--font-ui); font-size: 0.78rem; color: var(--color-text-faint);"></div>
+
+            <button class="btn btn-ghost btn-sm hidden" id="clear-portrait-btn">
+              ✕ Remove Portrait
+            </button>
+
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- ════════════════════════════════════════════
+         STEP 4 — REVIEW & SAVE
+         ════════════════════════════════════════════ -->
+    <div class="wizard-step" id="step-4" hidden>
+      <div id="review-content">
+        <!-- Rendered dynamically -->
+      </div>
+    </div>
+
+    <!-- ── Wizard navigation ── -->
+    <div class="wizard-nav">
+      <button class="btn btn-ghost" id="btn-back" style="visibility: hidden;">← Back</button>
+      <div style="font-family: var(--font-ui); font-size: 0.78rem; color: var(--color-text-faint);">
+        Step <span id="current-step-label">1</span> of 4
+      </div>
+      <button class="btn btn-primary" id="btn-next">Next →</button>
+    </div>
+
+  </div>
+</main>
+
+<script type="module">
+import { initCommonUI }                                from './js/app.js';
+import { saveCharacter }                               from './js/db.js';
+import {
+  uuid, rollAbilityScore, getModifier, formatModifier,
+  escapeHtml, showToast, showLoading, hideLoading,
+  capitalize, RACES, CLASSES,
+} from './js/utils.js';
+import { geminiGenerate, hasGeminiKey }                from './js/api-gemini.js';
+import { generatePortrait as genPortraitUrl }          from './js/api-image.js';
+
+initCommonUI();
+
+// ── Constants ─────────────────────────────────────────────────
+
+const TOTAL_STEPS = 4;
+
+const STAT_KEYS = ['strength','dexterity','constitution','intelligence','wisdom','charisma'];
+const STAT_ABBR = { strength:'STR', dexterity:'DEX', constitution:'CON', intelligence:'INT', wisdom:'WIS', charisma:'CHA' };
+const STANDARD_POOL = [15, 14, 13, 12, 10, 8];
+
+const HIT_DICE = {
+  fighter: 10, paladin: 10, ranger: 10, barbarian: 12,
+  wizard: 6,   sorcerer: 6,
+  rogue: 8,    bard: 8,   cleric: 8, druid: 8, monk: 8, warlock: 8,
+};
+
+const LEVEL_DESCS = [
+  '', 'A freshly forged adventurer', 'Seasoned by their first trials',
+  'A warrior with tales to tell', 'Experienced and capable',
+  'A recognised hero of the realm', 'Feared by lesser foes',
+  'A legend in the making', 'Renowned across many kingdoms',
+  'Among the most powerful alive', 'Approaching mythic status',
+  'Touched by divine power', 'Walking among legends',
+  'A force of nature', 'Shaking the pillars of the world',
+  'Rivalling demigods', 'Defying mortality itself',
+  'A name spoken with awe', 'Near the pinnacle of power',
+  'A true legend', 'Godlike in power and renown',
+];
+
+// ── Wizard state ──────────────────────────────────────────────
+
+let currentStep = 1;
+
+const wiz = {
+  name:          '',
+  race:          'human',
+  class:         'fighter',
+  level:         1,
+  scoreMethod:   'standard',      // 'standard' | 'roll' | 'manual'
+  pool:          [...STANDARD_POOL], // slot values
+  assignments:   { strength: null, dexterity: null, constitution: null, intelligence: null, wisdom: null, charisma: null },
+  manualScores:  { strength: 10,   dexterity: 10,   constitution: 10,   intelligence: 10,  wisdom: 10,   charisma: 10  },
+  backstory:     '',
+  portrait:      '',
+};
+
+// ── Race / Class cards ────────────────────────────────────────
+
+const RACE_META = {
+  human:      { icon: '👤', short: 'Versatile & ambitious' },
+  elf:        { icon: '🌿', short: 'Ancient & graceful' },
+  dwarf:      { icon: '⛏️', short: 'Stalwart & tough' },
+  'half-orc': { icon: '💪', short: 'Fierce & tenacious' },
+  halfling:   { icon: '🍃', short: 'Lucky & nimble' },
+  gnome:      { icon: '⚗️', short: 'Inventive & curious' },
+  tiefling:   { icon: '😈', short: 'Infernal & powerful' },
+  dragonborn: { icon: '🐉', short: 'Draconic & proud' },
+};
+
+const CLASS_META = {
+  fighter: { icon: '⚔️',  short: 'Master of combat'        },
+  wizard:  { icon: '🔮',  short: 'Scholar of the arcane'    },
+  rogue:   { icon: '🗡️', short: 'Shadow & precision'       },
+  cleric:  { icon: '✝️', short: 'Divine champion'           },
+  ranger:  { icon: '🏹',  short: 'Hunter of the wilds'      },
+  paladin: { icon: '🛡️', short: 'Holy warrior of oaths'    },
+  bard:    { icon: '🎵',  short: 'Performer & spellweaver'  },
+  druid:   { icon: '🌿',  short: 'Guardian of nature'       },
+  warlock: { icon: '💀',  short: 'Dark patron\'s champion'   },
+};
+
+function renderRaceGrid() {
+  const grid = document.getElementById('race-grid');
+  grid.innerHTML = RACES.map(r => `
+    <div class="option-card">
+      <input type="radio" name="race" id="race-${r.value}" value="${r.value}"
+             ${r.value === wiz.race ? 'checked' : ''} />
+      <label class="option-label" for="race-${r.value}">
+        <span class="option-icon">${RACE_META[r.value]?.icon ?? '👤'}</span>
+        <span class="option-name">${r.label}</span>
+        <span class="option-desc">${RACE_META[r.value]?.short ?? ''}</span>
+      </label>
+    </div>
+  `).join('');
+  grid.querySelectorAll('input[type="radio"]').forEach(inp => {
+    inp.addEventListener('change', () => {
+      wiz.race = inp.value;
+      updateRaceBadge();
+    });
+  });
+}
+
+function renderClassGrid() {
+  const grid = document.getElementById('class-grid');
+  grid.innerHTML = CLASSES.map(c => `
+    <div class="option-card">
+      <input type="radio" name="class" id="class-${c.value}" value="${c.value}"
+             ${c.value === wiz.class ? 'checked' : ''} />
+      <label class="option-label" for="class-${c.value}">
+        <span class="option-icon">${CLASS_META[c.value]?.icon ?? '⚔️'}</span>
+        <span class="option-name">${c.label}</span>
+        <span class="option-desc">${CLASS_META[c.value]?.short ?? ''}</span>
+        <span class="option-badge">d${HIT_DICE[c.value] ?? 8}</span>
+      </label>
+    </div>
+  `).join('');
+  grid.querySelectorAll('input[type="radio"]').forEach(inp => {
+    inp.addEventListener('change', () => {
+      wiz.class = inp.value;
+      updateClassBadge();
+      updateHPPreview();
+      document.getElementById('hp-class-label').textContent = capitalize(inp.value);
+    });
+  });
+}
+
+function updateRaceBadge() {
+  const badge = document.getElementById('selected-race-badge');
+  const meta  = RACE_META[wiz.race];
+  badge.textContent = `${meta?.icon ?? ''} ${capitalize(wiz.race)}`;
+  badge.classList.remove('hidden');
+}
+
+function updateClassBadge() {
+  const badge = document.getElementById('selected-class-badge');
+  const meta  = CLASS_META[wiz.class];
+  badge.textContent = `${meta?.icon ?? ''} ${capitalize(wiz.class)}`;
+  badge.classList.remove('hidden');
+}
+
+// ── Ability scores ────────────────────────────────────────────
+
+function setScoreMethod(method) {
+  wiz.scoreMethod = method;
+
+  // Toggle method buttons
+  document.querySelectorAll('.method-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.method === method);
+  });
+
+  const hints = {
+    standard: 'Standard array: assign 15, 14, 13, 12, 10, 8 to your stats.',
+    roll:     'Roll 4d6, drop the lowest die. Results are random — embrace fate!',
+    manual:   'Enter any values you like (3–20). Discuss with your DM first.',
+  };
+  document.getElementById('method-hint').textContent = hints[method];
+
+  const isManual  = method === 'manual';
+  const isRoll    = method === 'roll';
+  const isAssign  = !isManual;
+
+  document.getElementById('roll-section').style.display    = isRoll   ? 'block' : 'none';
+  document.getElementById('pool-section').style.display    = isAssign ? 'block' : 'none';
+  document.getElementById('assign-section').style.display  = isAssign ? 'block' : 'none';
+  document.getElementById('manual-section').style.display  = isManual ? 'grid'  : 'none';
+
+  if (method === 'standard') {
+    wiz.pool        = [...STANDARD_POOL];
+    wiz.assignments = { strength: null, dexterity: null, constitution: null, intelligence: null, wisdom: null, charisma: null };
+    renderPoolChips();
+    renderScoreSelects();
+  }
+  if (method === 'roll') {
+    // Don't auto-roll — wait for button press
+    if (wiz.pool.length === 0) {
+      renderPoolChips();
+      renderScoreSelects();
+    }
+  }
+  updateAllModifiers();
+}
+
+function rollAllScores() {
+  const results = STAT_KEYS.map(() => rollAbilityScore());
+  wiz.pool        = results.map(r => r.total);
+  wiz.assignments = { strength: null, dexterity: null, constitution: null, intelligence: null, wisdom: null, charisma: null };
+
+  // Log the rolls
+  const log = results.map((r, i) => `${STAT_KEYS[i].slice(0,3).toUpperCase()}: [${r.rolls.join(', ')} →drop ${r.dropped}] = ${r.total}`);
+  document.getElementById('roll-log').textContent = log.join('  |  ');
+
+  renderPoolChips(true); // true = animate new chips
+  renderScoreSelects();
+  updateAllModifiers();
+}
+
+function renderPoolChips(animate = false) {
+  const container = document.getElementById('pool-chips');
+  if (!container) return;
+
+  const usedSlots = new Set(
+    Object.values(wiz.assignments).filter(v => v !== null)
+  );
+
+  container.innerHTML = wiz.pool.map((val, slot) => `
+    <span class="pool-chip ${usedSlots.has(slot) ? 'used' : ''} ${animate ? 'new' : ''}">${val}</span>
+  `).join('');
+}
+
+function renderScoreSelects() {
+  const usedSlots = Object.entries(wiz.assignments)
+    .filter(([, v]) => v !== null)
+    .map(([, v]) => v);
+
+  STAT_KEYS.forEach(key => {
+    const select = document.getElementById(`score-select-${key}`);
+    if (!select) return;
+
+    const currentSlot = wiz.assignments[key];
+    const othersUsed  = usedSlots.filter(s => s !== currentSlot);
+    const available   = wiz.pool
+      .map((val, slot) => ({ slot, val }))
+      .filter(({ slot }) => !othersUsed.includes(slot));
+
+    select.innerHTML = '<option value="">— assign —</option>' +
+      available.map(({ slot, val }) =>
+        `<option value="${slot}" ${slot === currentSlot ? 'selected' : ''}>${val}</option>`
+      ).join('');
+  });
+
+  renderPoolChips();
+  updateAllModifiers();
+}
+
+function getScoreForStat(key) {
+  if (wiz.scoreMethod === 'manual') {
+    return wiz.manualScores[key] ?? 10;
+  }
+  const slot = wiz.assignments[key];
+  if (slot === null || slot === undefined) return null;
+  return wiz.pool[slot] ?? null;
+}
+
+function getEffectiveScores() {
+  const out = {};
+  STAT_KEYS.forEach(k => {
+    const v = getScoreForStat(k);
+    out[k] = v ?? 10;
+  });
+  return out;
+}
+
+function updateAllModifiers() {
+  STAT_KEYS.forEach(key => {
+    const score   = getScoreForStat(key);
+    const isNull  = score === null || isNaN(score);
+    const mod     = isNull ? null : getModifier(score);
+    const modTxt  = isNull ? '—' : formatModifier(score);
+    const modColor = isNull ? 'var(--color-text-faint)' : (mod >= 0 ? 'var(--color-success)' : 'var(--color-danger)');
+
+    const valEl  = document.getElementById(`val-${key}`);
+    const modEl  = document.getElementById(`mod-${key}`);
+    if (valEl) { valEl.textContent = isNull ? '—' : score; }
+    if (modEl) { modEl.textContent = modTxt; modEl.style.color = modColor; }
+
+    // Manual section elements
+    const mModEl = document.getElementById(`mod-m-${key}`);
+    if (mModEl && wiz.scoreMethod === 'manual') {
+      const mscore = wiz.manualScores[key];
+      const mmod   = getModifier(mscore);
+      mModEl.textContent  = formatModifier(mscore);
+      mModEl.style.color  = mmod >= 0 ? 'var(--color-success)' : 'var(--color-danger)';
+    }
+  });
+
+  updateHPPreview();
+}
+
+function calculateHP(cls, conScore, level) {
+  const hitDie = HIT_DICE[cls?.toLowerCase()] ?? 8;
+  const conMod = getModifier(conScore ?? 10);
+  const base   = Math.max(1, hitDie + conMod);
+  if (level <= 1) return base;
+  const perLevel = Math.max(1, Math.ceil(hitDie / 2) + 1 + conMod);
+  return base + (level - 1) * perLevel;
+}
+
+function updateHPPreview() {
+  const scores   = getEffectiveScores();
+  const level    = parseInt(document.getElementById('char-level')?.value) || 1;
+  const hp       = calculateHP(wiz.class, scores.constitution, level);
+  const ac       = 10 + getModifier(scores.dexterity);
+
+  const hpEl = document.getElementById('hp-preview');
+  const acEl = document.getElementById('ac-preview');
+  if (hpEl) hpEl.textContent = hp;
+  if (acEl) acEl.textContent = ac;
+}
+
+// ── Step navigation ───────────────────────────────────────────
+
+function validateStep(n) {
+  if (n === 1) {
+    const name = document.getElementById('char-name').value.trim();
+    if (name.length < 2) {
+      showToast('Enter a name of at least 2 characters.', 'error');
+      document.getElementById('char-name').focus();
+      return false;
+    }
+    if (!wiz.race)  { showToast('Choose a race.',  'error'); return false; }
+    if (!wiz.class) { showToast('Choose a class.', 'error'); return false; }
+    // Persist
+    wiz.name  = name;
+    wiz.level = parseInt(document.getElementById('char-level').value) || 1;
+    return true;
+  }
+
+  if (n === 2) {
+    if (wiz.scoreMethod !== 'manual') {
+      const allAssigned = STAT_KEYS.every(k => wiz.assignments[k] !== null);
+      if (!allAssigned) {
+        showToast('Assign a score to every ability.', 'error');
+        return false;
+      }
+    } else {
+      const allValid = STAT_KEYS.every(k => {
+        const v = parseInt(document.getElementById(`manual-${k}`)?.value);
+        return !isNaN(v) && v >= 3 && v <= 20;
+      });
+      if (!allValid) {
+        showToast('All scores must be between 3 and 20.', 'error');
+        return false;
+      }
+    }
+    return true;
+  }
+
+  if (n === 3) {
+    wiz.backstory = document.getElementById('backstory-input').value.trim();
+    return true;
+  }
+
+  return true;
+}
+
+function goToStep(n) {
+  if (n < 1 || n > TOTAL_STEPS) return;
+
+  // Show / hide step panels
+  for (let i = 1; i <= TOTAL_STEPS; i++) {
+    const el = document.getElementById(`step-${i}`);
+    if (el) el.hidden = (i !== n);
+  }
+
+  // Update progress indicator
+  document.querySelectorAll('.step-item').forEach(item => {
+    const s = parseInt(item.dataset.step);
+    item.classList.toggle('active', s === n);
+    item.classList.toggle('done',   s < n);
+  });
+
+  // Nav buttons
+  const btnBack = document.getElementById('btn-back');
+  const btnNext = document.getElementById('btn-next');
+  btnBack.style.visibility = n === 1 ? 'hidden' : 'visible';
+  btnNext.textContent      = n === TOTAL_STEPS ? '' : 'Next →';
+  btnNext.style.display    = n === TOTAL_STEPS ? 'none' : 'inline-flex';
+
+  document.getElementById('current-step-label').textContent = n;
+
+  // Extra per-step init
+  if (n === 2) updateHPPreview();
+  if (n === 4) renderReview();
+
+  currentStep = n;
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ── Review step ───────────────────────────────────────────────
+
+function renderReview() {
+  const scores = getEffectiveScores();
+  const hp     = calculateHP(wiz.class, scores.constitution, wiz.level);
+  const ac     = 10 + getModifier(scores.dexterity);
+
+  const raceLabel  = RACES.find(r => r.value === wiz.race)?.label  ?? capitalize(wiz.race);
+  const classLabel = CLASSES.find(c => c.value === wiz.class)?.label ?? capitalize(wiz.class);
+
+  const portraitHtml = wiz.portrait
+    ? `<img src="${escapeHtml(wiz.portrait)}" class="review-portrait" alt="Portrait" style="border-radius:var(--radius);object-fit:cover;" />`
+    : `<div class="review-portrait" style="border:2px solid var(--color-border);border-radius:var(--radius);display:flex;align-items:center;justify-content:center;font-size:3rem;">🧙</div>`;
+
+  document.getElementById('review-content').innerHTML = `
+    <div class="card card-gold" style="padding: 0; overflow: hidden; margin-bottom: 1.5rem;">
+
+      <!-- Header with portrait -->
+      <div style="padding: 1.5rem; display: flex; gap: 1.25rem; align-items: flex-start; background: linear-gradient(135deg, var(--color-surface), #1e1a0f);">
+        ${portraitHtml}
+        <div style="flex: 1; min-width: 0;">
+          <h2 style="font-size: 1.5rem; color: var(--color-primary); margin-bottom: 0.3rem;">${escapeHtml(wiz.name)}</h2>
+          <div style="font-family: var(--font-ui); color: var(--color-text-muted); margin-bottom: 0.6rem;">
+            ${escapeHtml(raceLabel)} · ${escapeHtml(classLabel)}
+          </div>
+          <div style="display: flex; gap: 0.4rem; flex-wrap: wrap;">
+            <span class="badge badge-primary">Level ${wiz.level}</span>
+            <span class="badge badge-danger">❤️ ${hp} HP</span>
+            <span class="badge badge-muted">🛡️ AC ${ac}</span>
+            <span class="badge badge-muted">💰 10 gp</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stats grid -->
+      <div style="padding: 1.25rem; border-top: 1px solid var(--color-border);">
+        <div class="stat-grid">
+          ${STAT_KEYS.map(key => `
+            <div class="stat-block">
+              <span class="stat-label">${STAT_ABBR[key]}</span>
+              <span class="stat-value">${scores[key]}</span>
+              <span class="stat-modifier">${formatModifier(scores[key])}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+
+      <!-- Backstory -->
+      ${wiz.backstory ? `
+        <div style="padding: 1.25rem; border-top: 1px solid var(--color-border);">
+          <h4 style="font-family: var(--font-display); font-size: 0.85rem; color: var(--color-primary); margin-bottom: 0.75rem;">📜 Backstory</h4>
+          <p style="font-style: italic; color: var(--color-text-muted); line-height: 1.75; font-size: 0.95rem;">
+            ${escapeHtml(wiz.backstory)}
+          </p>
+        </div>
+      ` : `
+        <div style="padding: 1rem 1.25rem; border-top: 1px solid var(--color-border);">
+          <span style="font-family: var(--font-ui); font-size: 0.8rem; color: var(--color-text-faint); font-style: italic;">
+            No backstory written — you can add one later in the character manager.
+          </span>
+        </div>
+      `}
+
+    </div>
+
+    <div style="text-align: center;">
+      <button class="btn btn-primary btn-lg" id="btn-save-character">
+        ⚔️ Begin the Legend
+      </button>
+      <div style="font-family: var(--font-ui); font-size: 0.78rem; color: var(--color-text-faint); margin-top: 0.6rem;">
+        Your hero will be saved and ready for adventure
+      </div>
+    </div>
+  `;
+
+  document.getElementById('btn-save-character')?.addEventListener('click', saveAndRedirect);
+}
+
+// ── Save character ────────────────────────────────────────────
+
+function saveAndRedirect() {
+  const scores = getEffectiveScores();
+  const level  = wiz.level;
+  const hp     = calculateHP(wiz.class, scores.constitution, level);
+  const ac     = 10 + getModifier(scores.dexterity);
+
+  const char = {
+    id:        uuid(),
+    name:      wiz.name,
+    race:      wiz.race,
+    class:     wiz.class,
+    level,
+    backstory: wiz.backstory,
+    portrait:  wiz.portrait,
+    stats: {
+      hp,
+      maxHp: hp,
+      ac,
+      strength:     scores.strength,
+      dexterity:    scores.dexterity,
+      constitution: scores.constitution,
+      intelligence: scores.intelligence,
+      wisdom:       scores.wisdom,
+      charisma:     scores.charisma,
+    },
+    skills:       [],
+    inventory:    [],
+    conditions:   [],
+    gold:         10,
+    xp:           0,
+    adventureLog: [`Created ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}.`],
+    createdAt:    Date.now(),
+    updatedAt:    Date.now(),
+  };
+
+  saveCharacter(char);
+  showToast(`${char.name} has been forged!`, 'success');
+
+  setTimeout(() => {
+    window.location.href = 'character-manager.html';
+  }, 900);
+}
+
+// ── AI generation ─────────────────────────────────────────────
+
+async function generateBackstory() {
+  if (!hasGeminiKey()) {
+    showToast('Add your Gemini API key in ⚙️ Settings first.', 'error');
+    return;
+  }
+
+  const name  = document.getElementById('char-name').value.trim() || wiz.name || 'Unknown';
+  const race  = RACES.find(r => r.value === wiz.race)?.label ?? wiz.race;
+  const cls   = CLASSES.find(c => c.value === wiz.class)?.label ?? wiz.class;
+  const level = parseInt(document.getElementById('char-level')?.value) || wiz.level;
+
+  const prompt = `Write a compelling, immersive DND 5e backstory for this character:
+- Name: ${name}
+- Race: ${race}
+- Class: ${cls}
+- Level: ${level}
+
+Requirements:
+- Exactly 2 short paragraphs (total ~130 words)
+- Include a defining moment that shaped them as a ${cls}
+- Hint at their motivation and personality
+- Dark fantasy tone with vivid imagery
+- Write ONLY the backstory text, no title or preamble`;
+
+  showLoading('Weaving your legend…');
+  const hint = document.getElementById('backstory-gen-hint');
+  try {
+    const result = await geminiGenerate(prompt);
+    document.getElementById('backstory-input').value = result;
+    wiz.backstory = result;
+    if (hint) hint.textContent = '✓ AI backstory generated — feel free to edit it.';
+    showToast('Backstory generated!', 'success');
+  } catch (err) {
+    if (hint) hint.textContent = '';
+    showToast('Generation failed: ' + err.message, 'error');
+  } finally {
+    hideLoading();
+  }
+}
+
+async function generatePortraitFromAI() {
+  const statusEl = document.getElementById('portrait-status');
+  if (statusEl) statusEl.textContent = '🎨 Generating portrait… (this may take a few seconds)';
+
+  showLoading('Painting your portrait…');
+
+  try {
+    const name  = document.getElementById('char-name').value.trim() || wiz.name || 'adventurer';
+    const race  = RACES.find(r => r.value === wiz.race)?.label ?? wiz.race;
+    const cls   = CLASSES.find(c => c.value === wiz.class)?.label ?? wiz.class;
+
+    const url = await genPortraitUrl({ name, race, class: cls, backstory: wiz.backstory });
+    const img = document.getElementById('portrait-preview-img');
+
+    img.onload = () => {
+      hideLoading();
+      if (statusEl) statusEl.textContent = '✓ Portrait generated!';
+      showToast('Portrait ready!', 'success');
+    };
+    img.onerror = () => {
+      hideLoading();
+      if (statusEl) statusEl.textContent = '✕ Failed to load. Try again.';
+      showToast('Portrait failed to load. Try again.', 'error');
+    };
+
+    img.src = url;
+    img.style.display = 'block';
+    document.getElementById('portrait-placeholder').style.display = 'none';
+    document.getElementById('portrait-drop-area').classList.add('has-portrait');
+    document.getElementById('clear-portrait-btn').classList.remove('hidden');
+
+    wiz.portrait = url;
+
+  } catch (err) {
+    hideLoading();
+    if (statusEl) statusEl.textContent = '';
+    showToast('Portrait generation failed: ' + err.message, 'error');
+  }
+}
+
+function handlePortraitUpload(file) {
+  if (!file || !file.type.startsWith('image/')) {
+    showToast('Please select an image file.', 'error');
+    return;
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    showToast('Image must be under 5 MB.', 'error');
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    const base64 = e.target.result;
+    wiz.portrait = base64;
+
+    const img = document.getElementById('portrait-preview-img');
+    img.src = base64;
+    img.style.display = 'block';
+    document.getElementById('portrait-placeholder').style.display = 'none';
+    document.getElementById('portrait-drop-area').classList.add('has-portrait');
+    document.getElementById('clear-portrait-btn').classList.remove('hidden');
+
+    const statusEl = document.getElementById('portrait-status');
+    if (statusEl) statusEl.textContent = `✓ ${file.name} uploaded`;
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearPortrait() {
+  wiz.portrait = '';
+  const img = document.getElementById('portrait-preview-img');
+  img.src = '';
+  img.style.display = 'none';
+  document.getElementById('portrait-placeholder').style.display = 'block';
+  document.getElementById('portrait-drop-area').classList.remove('has-portrait');
+  document.getElementById('clear-portrait-btn').classList.add('hidden');
+  const statusEl = document.getElementById('portrait-status');
+  if (statusEl) statusEl.textContent = '';
+}
+
+// ── Event listeners ───────────────────────────────────────────
+
+// Navigation
+document.getElementById('btn-next').addEventListener('click', () => {
+  if (!validateStep(currentStep)) return;
+  goToStep(currentStep + 1);
+});
+
+document.getElementById('btn-back').addEventListener('click', () => {
+  goToStep(currentStep - 1);
+});
+
+// Level description
+document.getElementById('char-level').addEventListener('input', e => {
+  const lvl = parseInt(e.target.value) || 1;
+  document.getElementById('level-desc').textContent = LEVEL_DESCS[Math.min(lvl, 20)] ?? '';
+  wiz.level = lvl;
+  updateHPPreview();
+});
+
+// Score method toggle
+document.querySelectorAll('.method-btn').forEach(btn => {
+  btn.addEventListener('click', () => setScoreMethod(btn.dataset.method));
+});
+
+// Roll button
+document.getElementById('roll-all-btn').addEventListener('click', rollAllScores);
+
+// Score selects
+STAT_KEYS.forEach(key => {
+  const select = document.getElementById(`score-select-${key}`);
+  select?.addEventListener('change', e => {
+    wiz.assignments[key] = e.target.value !== '' ? parseInt(e.target.value) : null;
+    renderScoreSelects();
+    updateAllModifiers();
+  });
+});
+
+// Manual inputs
+STAT_KEYS.forEach(key => {
+  const input = document.getElementById(`manual-${key}`);
+  input?.addEventListener('input', e => {
+    const v = parseInt(e.target.value);
+    wiz.manualScores[key] = isNaN(v) ? 10 : Math.min(20, Math.max(3, v));
+    updateAllModifiers();
+  });
+});
+
+// Backstory AI
+document.getElementById('gen-backstory-btn').addEventListener('click', generateBackstory);
+
+// Portrait
+document.getElementById('portrait-upload-btn').addEventListener('click', () => {
+  document.getElementById('portrait-file').click();
+});
+document.getElementById('portrait-file').addEventListener('change', e => {
+  handlePortraitUpload(e.target.files?.[0]);
+  e.target.value = '';
+});
+document.getElementById('gen-portrait-btn').addEventListener('click', generatePortraitFromAI);
+document.getElementById('clear-portrait-btn').addEventListener('click', clearPortrait);
+
+// Drag-and-drop on portrait area
+const dropArea = document.getElementById('portrait-drop-area');
+dropArea.addEventListener('dragover',  e => { e.preventDefault(); dropArea.style.borderColor = 'var(--color-primary)'; });
+dropArea.addEventListener('dragleave', () => { dropArea.style.borderColor = ''; });
+dropArea.addEventListener('drop', e => {
+  e.preventDefault();
+  dropArea.style.borderColor = '';
+  handlePortraitUpload(e.dataTransfer.files?.[0]);
+});
+
+// ── Initialise ────────────────────────────────────────────────
+
+renderRaceGrid();
+renderClassGrid();
+updateRaceBadge();
+updateClassBadge();
+
+// Initialise score UI in standard array mode
+setScoreMethod('standard');
+
+goToStep(1);
+</script>
+</body>
+</html>

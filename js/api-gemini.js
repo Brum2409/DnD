@@ -10,7 +10,7 @@
  *   const text = await geminiGenerate('Write a short DND tavern description.');
  *   const reply = await geminiChat(history, systemPrompt);
  */
-const GEMINI_MODEL = 'gemini-2.5-flash-exp';
+const GEMINI_MODEL = 'gemini-3-flash';
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 // ── Key management ────────────────────────────────────────────

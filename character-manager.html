@@ -4,6 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Characters — DND AI</title>
+  <meta name="description" content="Manage your DND characters — view stats, inventory, skills, HP, conditions, and adventure logs." />
+  <meta property="og:title"       content="DND AI — Character Manager" />
+  <meta property="og:description" content="Track HP, inventory, skills, and conditions for all your DND heroes." />
+  <meta property="og:type"        content="website" />
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpolygon points='16,2 30,10 30,22 16,30 2,22 2,10' fill='%230d0d0f' stroke='%23c9a84c' stroke-width='2'/%3E%3Ctext x='16' y='21' text-anchor='middle' font-size='14' fill='%23c9a84c' font-family='serif'%3E20%3C/text%3E%3C/svg%3E" />
   <link rel="stylesheet" href="css/base.css" />
   <link rel="stylesheet" href="css/components.css" />
@@ -118,6 +122,28 @@
 
     @media (max-width: 640px) {
       .inv-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    /* Mobile: split layout adjustments */
+    @media (max-width: 900px) {
+      /* Sidebar becomes a horizontal card scroller */
+      .split-sidebar {
+        max-height: 220px;
+        overflow-x: auto;
+        overflow-y: hidden;
+        -webkit-overflow-scrolling: touch;
+      }
+      .split-sidebar-list {
+        flex-direction: row;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        overflow-y: hidden;
+        padding-bottom: 0.5rem;
+      }
+      .char-sidebar-item {
+        min-width: 160px;
+        flex-shrink: 0;
+      }
     }
   </style>
 </head>

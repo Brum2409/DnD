@@ -578,6 +578,31 @@
   }
 }
 
+/* Modals: slide up from bottom on mobile */
+@media (max-width: 768px) {
+  .modal {
+    max-width: 100% !important;
+    width: 100% !important;
+    margin: 0;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    max-height: 92vh;
+    overflow-y: auto;
+  }
+  .modal-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .modal-body {
+    max-height: calc(85vh - 3.5rem);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Step progress: tighter on mobile */
+  .step-label    { display: none; }
+  .step-circle   { width: 28px; height: 28px; font-size: 0.8rem; }
+}
+
 @media (max-width: 640px) {
   .navbar-nav {
     display: none;
@@ -585,11 +610,23 @@
 
   .hamburger {
     display: flex;
+    min-height: 44px;
+    min-width: 44px;
+    align-items: center;
+    justify-content: center;
   }
+
+  /* Decent touch targets for all buttons */
+  .btn { min-height: 40px; }
+  .btn-sm { min-height: 36px; }
 
   .page-container,
   .page-container-sm {
-    padding: 1.25rem 1rem;
+    padding: 1.1rem 0.9rem;
+  }
+
+  .page-title {
+    font-size: clamp(1.4rem, 6vw, 2rem);
   }
 
   .game-layout {
@@ -603,5 +640,28 @@
 
   .item-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  /* Tabs: horizontally scrollable, no wrap */
+  .tabs {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap;
+    scrollbar-width: none;
+    gap: 0.25rem;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab-btn { white-space: nowrap; flex-shrink: 0; }
+}
+
+@media (max-width: 420px) {
+  .page-container,
+  .page-container-sm {
+    padding: 0.9rem 0.75rem;
+  }
+
+  /* Hide brand text on tiny screens — keep icon */
+  .navbar-brand span:not(.brand-icon) {
+    display: none;
   }
 }

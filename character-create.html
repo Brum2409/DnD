@@ -4,6 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Create Character — DND AI</title>
+  <meta name="description" content="Build your DND hero — choose race, class, roll ability scores, generate a portrait and backstory with AI." />
+  <meta property="og:title"       content="DND AI — Create a Character" />
+  <meta property="og:description" content="Forge your hero. Race, class, backstory, and AI-generated portrait await." />
+  <meta property="og:type"        content="website" />
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpolygon points='16,2 30,10 30,22 16,30 2,22 2,10' fill='%230d0d0f' stroke='%23c9a84c' stroke-width='2'/%3E%3Ctext x='16' y='21' text-anchor='middle' font-size='14' fill='%23c9a84c' font-family='serif'%3E20%3C/text%3E%3C/svg%3E" />
   <link rel="stylesheet" href="css/base.css" />
   <link rel="stylesheet" href="css/components.css" />
@@ -146,6 +150,17 @@
     @media (max-width: 640px) {
       .option-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); }
       .score-row   { flex-wrap: wrap; gap: 0.5rem; }
+      .method-toggle { flex-wrap: wrap; }
+      .method-btn  { min-height: 40px; font-size: 0.75rem; }
+      /* Wizard container: tighter padding */
+      .page-container-sm { padding: 1rem 0.85rem; }
+    }
+
+    @media (max-width: 420px) {
+      .option-grid { grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); }
+      .option-icon { font-size: 1.2rem; }
+      .option-name { font-size: 0.72rem; }
+      .option-desc { display: none; } /* hide tiny descriptions on very small screens */
     }
   </style>
 </head>

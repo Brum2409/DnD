@@ -10,7 +10,7 @@
 import {
   getStory, saveStory, getCharacter, getAllItems, getItem,
 } from './db.js';
-import { geminiChat, toGeminiHistory } from './api-gemini.js';
+import { geminiChat, geminiGenerate, toGeminiHistory } from './api-gemini.js';
 import { generateImage } from './api-image.js';
 import { getModifier, getProficiencyBonus } from './utils.js';
 import { executeDMTools, toolResultSummary } from './dm-tools.js';
@@ -256,23 +256,55 @@ export async function sendDMMessage(storyId, userMessage) {
 }
 
 /**
+ * Use Gemini to extract key visual elements from a scene description
+ * and build an optimised Pollinations.ai image prompt.
+ * @param {string} sceneDesc
+ * @param {string} setting
+ * @returns {Promise<string>}
+ */
+async function optimizeImagePrompt(sceneDesc, setting) {
+  if (!sceneDesc && !setting) return 'dark fantasy adventure scene, cinematic';
+  try {
+    const raw = await geminiGenerate(
+      `Convert this DND scene description into a vivid image generation prompt (under 80 words). Focus only on visual elements: environment, lighting, atmosphere, colors, textures, mood. No dialogue, no character names, no story text. Return only the prompt.
+
+Scene: "${(sceneDesc || '').slice(0, 400)}"
+Setting: "${setting || 'dark fantasy world'}"`,
+      '',
+      0.7
+    );
+    return raw.trim().slice(0, 400);
+  } catch {
+    // Fallback: compose a basic prompt from the raw inputs
+    const base = (sceneDesc || setting || 'fantasy scene').slice(0, 200);
+    return base;
+  }
+}
+
+/**
  * Generate a scene image in the background and save to story.
  */
-async function generateSceneImageAsync(storyId, sceneId, prompt) {
+async function generateSceneImageAsync(storyId, sceneId, rawPrompt) {
   try {
+    // First, ask Gemini to optimise the visual prompt
+    const story = getStory(storyId);
+    const setting = story?.setting || '';
+    const visualPrompt = await optimizeImagePrompt(rawPrompt, setting);
+
     const url = await generateImage(
-      prompt + ', fantasy digital art, cinematic, dramatic lighting, wide angle',
+      visualPrompt + ', fantasy digital art, cinematic lighting, detailed, wide angle, 16:9',
       768, 432
     );
-    const story = getStory(storyId);
-    if (!story) return;
-    const scene = story.scenes.find(s => s.id === sceneId);
+    const updatedStory = getStory(storyId);
+    if (!updatedStory) return;
+    const scene = updatedStory.scenes.find(s => s.id === sceneId);
     if (scene) {
       scene.imageUrl = url;
-      if (story.currentSceneIndex === story.scenes.indexOf(scene)) {
-        story.sceneImageUrl = url;
+      scene.imagePrompt = visualPrompt;
+      if (updatedStory.currentSceneIndex === updatedStory.scenes.indexOf(scene)) {
+        updatedStory.sceneImageUrl = url;
       }
-      saveStory(story);
+      saveStory(updatedStory);
     }
   } catch (err) {
     console.warn('[dm-engine] Scene image generation failed:', err.message);

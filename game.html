@@ -8,18 +8,397 @@
   <link rel="stylesheet" href="css/base.css" />
   <link rel="stylesheet" href="css/components.css" />
   <link rel="stylesheet" href="css/layout.css" />
+  <style>
+    /* ── Game layout — fills the viewport below the navbar ── */
+    body { overflow: hidden; }
+
+    .game-wrap {
+      display: flex;
+      flex-direction: column;
+      height: calc(100vh - var(--nav-height, 56px));
+      overflow: hidden;
+    }
+
+    /* ── Scene image area ── */
+    .scene-area {
+      position: relative;
+      flex: 0 0 38%;
+      min-height: 180px;
+      max-height: 340px;
+      overflow: hidden;
+      background: var(--color-surface-2);
+    }
+
+    .scene-img {
+      width: 100%; height: 100%;
+      object-fit: cover;
+      animation: kenBurns 24s ease-in-out infinite alternate;
+      transform-origin: center center;
+    }
+
+    @keyframes kenBurns {
+      0%   { transform: scale(1.0) translate(0%, 0%); }
+      33%  { transform: scale(1.06) translate(-1.5%, 0.5%); }
+      66%  { transform: scale(1.04) translate(1%, -0.5%); }
+      100% { transform: scale(1.07) translate(-0.5%, 1%); }
+    }
+
+    .scene-shimmer {
+      position: absolute; inset: 0;
+      background: linear-gradient(
+        110deg,
+        var(--color-surface-2) 30%,
+        var(--color-surface-3) 50%,
+        var(--color-surface-2) 70%
+      );
+      background-size: 200% 100%;
+      animation: shimmer 2s linear infinite;
+    }
+    @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+    /* Rune shimmer text */
+    .scene-shimmer::after {
+      content: '✦   ᛟ   ✦   ᚷ   ✦   ᛗ   ✦';
+      position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 1.5rem; letter-spacing: 1rem;
+      color: var(--color-border); opacity: 0.5;
+      animation: pulse 3s ease-in-out infinite;
+    }
+    @keyframes pulse { 0%,100% { opacity: 0.25; } 50% { opacity: 0.55; } }
+
+    .scene-overlay {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      background: linear-gradient(transparent, rgba(13,13,15,0.92));
+      padding: 2.5rem 1.25rem 0.85rem;
+      display: flex; align-items: flex-end; justify-content: space-between;
+    }
+
+    .scene-title {
+      font-family: var(--font-display);
+      font-size: 1.15rem;
+      color: var(--color-primary);
+      text-shadow: 0 2px 12px rgba(0,0,0,0.8);
+    }
+
+    .scene-regen-btn {
+      background: rgba(13,13,15,0.6); border: 1px solid var(--color-border);
+      color: var(--color-text-muted); font-size: 0.72rem;
+      padding: 0.3em 0.65em; border-radius: var(--radius);
+      cursor: pointer; transition: all var(--transition); white-space: nowrap;
+      font-family: var(--font-ui);
+    }
+    .scene-regen-btn:hover { border-color: var(--color-primary-dark); color: var(--color-primary); }
+
+    /* ── Lower game area ── */
+    .game-lower {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    /* ── Character status panel ── */
+    .char-panel {
+      width: 240px;
+      flex-shrink: 0;
+      background: var(--color-surface);
+      border-right: 1px solid var(--color-border);
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+
+    .char-panel-header {
+      padding: 0.75rem 1rem 0.6rem;
+      border-bottom: 1px solid var(--color-border);
+      font-family: var(--font-display);
+      font-size: 0.8rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--color-text-faint);
+    }
+
+    .char-mini-card {
+      padding: 0.85rem 1rem;
+      border-bottom: 1px solid var(--color-border);
+      cursor: pointer;
+      transition: background var(--transition);
+    }
+    .char-mini-card:hover { background: var(--color-surface-2); }
+
+    .char-mini-top {
+      display: flex; align-items: center; gap: 0.65rem; margin-bottom: 0.55rem;
+    }
+    .char-mini-portrait {
+      width: 38px; height: 38px; border-radius: 50%; flex-shrink: 0;
+      overflow: hidden; background: var(--color-surface-3);
+      display: flex; align-items: center; justify-content: center; font-size: 1rem;
+    }
+    .char-mini-portrait img { width: 100%; height: 100%; object-fit: cover; }
+    .char-mini-info { flex: 1; min-width: 0; }
+    .char-mini-name { font-family: var(--font-display); font-size: 0.82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .char-mini-sub  { font-family: var(--font-ui); font-size: 0.65rem; color: var(--color-text-faint); }
+
+    /* HP bar */
+    .hp-bar-wrap { margin-bottom: 0.4rem; }
+    .hp-bar-label { display: flex; justify-content: space-between; font-family: var(--font-ui); font-size: 0.68rem; color: var(--color-text-faint); margin-bottom: 0.2rem; }
+    .hp-bar { height: 6px; background: var(--color-surface-3); border-radius: 3px; overflow: hidden; }
+    .hp-bar-fill { height: 100%; border-radius: 3px; transition: width 0.5s ease, background-color 0.5s ease; }
+
+    /* Condition chips */
+    .condition-chips { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.4rem; }
+    .condition-chip  {
+      font-family: var(--font-ui); font-size: 0.6rem; padding: 0.15em 0.45em;
+      border-radius: 999px; background: var(--color-danger-glow);
+      border: 1px solid var(--color-danger); color: var(--color-danger);
+    }
+
+    .char-gold {
+      font-family: var(--font-ui); font-size: 0.7rem; color: var(--color-primary);
+      margin-top: 0.35rem;
+    }
+
+    /* ── DM Chat panel ── */
+    .chat-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: var(--color-bg);
+    }
+
+    .chat-history {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+      scroll-behavior: smooth;
+    }
+
+    /* DM message */
+    .msg-dm {
+      align-self: flex-start;
+      max-width: 85%;
+    }
+    .msg-dm-bubble {
+      background: var(--color-surface-2);
+      border: 1px solid var(--color-primary-dark);
+      border-left: 3px solid var(--color-primary);
+      border-radius: 0 var(--radius-lg) var(--radius-lg) var(--radius-lg);
+      padding: 0.9rem 1.1rem;
+      font-family: var(--font-body);
+      font-size: 0.95rem;
+      line-height: 1.7;
+      color: var(--color-text);
+    }
+    .msg-dm-label {
+      font-family: var(--font-display);
+      font-size: 0.7rem;
+      letter-spacing: 0.06em;
+      color: var(--color-primary);
+      margin-bottom: 0.4rem;
+      text-transform: uppercase;
+    }
+
+    /* Player message */
+    .msg-player {
+      align-self: flex-end;
+      max-width: 75%;
+    }
+    .msg-player-bubble {
+      background: var(--color-surface-3);
+      border: 1px solid var(--color-border);
+      border-right: 3px solid var(--color-accent);
+      border-radius: var(--radius-lg) 0 var(--radius-lg) var(--radius-lg);
+      padding: 0.7rem 1rem;
+      font-family: var(--font-ui);
+      font-size: 0.88rem;
+      line-height: 1.5;
+    }
+
+    /* Tool event badge */
+    .tool-badge {
+      align-self: center;
+      font-family: var(--font-ui);
+      font-size: 0.75rem;
+      padding: 0.35em 0.85em;
+      border-radius: 999px;
+      background: var(--color-surface-2);
+      border: 1px solid var(--color-border);
+      color: var(--color-text-muted);
+      max-width: 90%;
+      text-align: center;
+    }
+    .tool-badge.tool-damage   { border-color: var(--color-danger);  background: var(--color-danger-glow);  color: var(--color-danger); }
+    .tool-badge.tool-heal     { border-color: var(--color-success); background: var(--color-success-glow); color: var(--color-success); }
+    .tool-badge.tool-item     { border-color: var(--color-primary); background: var(--color-primary-glow); color: var(--color-primary); }
+    .tool-badge.tool-death    { border-color: var(--color-danger);  background: var(--color-danger-glow);  color: var(--color-danger);  font-weight: 700; }
+    .tool-badge.tool-scene    { border-color: var(--color-accent);  background: var(--color-accent-glow);  color: var(--color-accent); }
+
+    /* Typing indicator */
+    .typing-indicator {
+      align-self: flex-start;
+      display: flex; align-items: center; gap: 0.4rem;
+      padding: 0.65rem 1rem;
+      background: var(--color-surface-2);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius);
+    }
+    .typing-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--color-primary);
+      animation: typingBounce 1.2s ease-in-out infinite;
+    }
+    .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+    .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes typingBounce { 0%,80%,100% { transform: scale(0.7); opacity: 0.4; } 40% { transform: scale(1); opacity: 1; } }
+    .typing-label { font-family: var(--font-ui); font-size: 0.72rem; color: var(--color-text-faint); }
+
+    /* ── Chat input ── */
+    .chat-input-area {
+      border-top: 1px solid var(--color-border);
+      background: var(--color-surface);
+      padding: 0.85rem 1rem;
+      display: flex;
+      gap: 0.65rem;
+      align-items: flex-end;
+    }
+
+    .chat-textarea {
+      flex: 1;
+      resize: none;
+      background: var(--color-surface-2);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius);
+      color: var(--color-text);
+      font-family: var(--font-ui);
+      font-size: 0.9rem;
+      padding: 0.65rem 0.85rem;
+      line-height: 1.5;
+      max-height: 120px;
+      transition: border-color var(--transition);
+    }
+    .chat-textarea:focus { outline: none; border-color: var(--color-primary-dark); }
+    .chat-textarea::placeholder { color: var(--color-text-faint); }
+
+    .send-btn {
+      flex-shrink: 0;
+      padding: 0.6em 1.1em;
+      background: var(--color-primary);
+      color: var(--color-bg);
+      border: none; border-radius: var(--radius);
+      font-family: var(--font-display);
+      font-size: 0.88rem;
+      cursor: pointer;
+      transition: all var(--transition);
+      white-space: nowrap;
+    }
+    .send-btn:hover:not(:disabled) { background: var(--color-primary-dark); }
+    .send-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    /* ── Death overlay ── */
+    .death-overlay {
+      position: fixed; inset: 0; z-index: 200;
+      background: rgba(0,0,0,0.88);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 1rem;
+      animation: fadeIn 0.6s ease;
+    }
+    .death-overlay h2 { font-family: var(--font-display); font-size: 2rem; color: var(--color-danger); }
+    .death-overlay p  { font-family: var(--font-body); font-size: 1rem; color: var(--color-text-muted); }
+
+    /* ── Character detail slide-over ── */
+    .char-slideover {
+      position: fixed; top: 0; right: 0; bottom: 0; z-index: 100;
+      width: min(420px, 95vw);
+      background: var(--color-surface);
+      border-left: 1px solid var(--color-border);
+      transform: translateX(100%);
+      transition: transform 0.3s ease;
+      overflow-y: auto;
+      padding: 1.5rem;
+      box-shadow: -8px 0 32px rgba(0,0,0,0.5);
+    }
+    .char-slideover.open { transform: translateX(0); }
+    .slideover-close {
+      position: absolute; top: 1rem; right: 1rem;
+      background: none; border: none; color: var(--color-text-muted);
+      cursor: pointer; font-size: 1.2rem;
+    }
+    .slideover-backdrop {
+      position: fixed; inset: 0; z-index: 99;
+      background: rgba(0,0,0,0.5);
+      display: none;
+    }
+    .slideover-backdrop.open { display: block; }
+
+    /* ── No active story ── */
+    .no-story-msg {
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      height: 100%; gap: 1rem; text-align: center; padding: 2rem;
+    }
+
+    /* ── Mobile: bottom drawer for char panel ── */
+    @media (max-width: 700px) {
+      .scene-area   { flex: 0 0 33%; }
+      .char-panel   {
+        position: fixed; bottom: 0; left: 0; right: 0;
+        width: auto; height: 260px;
+        transform: translateY(100%);
+        transition: transform 0.3s ease;
+        z-index: 50;
+        border-right: none;
+        border-top: 2px solid var(--color-primary-dark);
+        flex-direction: row; overflow-x: auto; overflow-y: hidden;
+        flex-wrap: nowrap;
+      }
+      .char-panel.open { transform: translateY(0); }
+      .char-mini-card { min-width: 180px; border-right: 1px solid var(--color-border); border-bottom: none; }
+      .char-panel-header { display: none; }
+
+      .mobile-char-toggle {
+        position: fixed; bottom: 1rem; left: 1rem; z-index: 51;
+        background: var(--color-surface-2);
+        border: 1px solid var(--color-primary-dark);
+        border-radius: 999px; padding: 0.5em 1em;
+        font-family: var(--font-ui); font-size: 0.78rem;
+        cursor: pointer; color: var(--color-text);
+        display: block;
+      }
+    }
+    @media (min-width: 701px) {
+      .mobile-char-toggle { display: none; }
+    }
+
+    /* ── Scroll fade top ── */
+    .chat-history-wrap { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+    .chat-history-wrap::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 40px;
+      background: linear-gradient(var(--color-bg), transparent);
+      pointer-events: none; z-index: 1;
+    }
+
+    /* radius-lg fallback */
+    :root { --radius-lg: 10px; }
+  </style>
 </head>
 <body>
 
-<nav class="navbar" role="navigation" aria-label="Main navigation">
+<!-- Navbar -->
+<nav class="navbar" role="navigation" aria-label="Main navigation" id="game-nav">
   <a href="index.html" class="navbar-brand">
-    <span class="brand-icon">⚔️</span>DND AI
+    <span class="brand-icon">⚔️</span><span id="nav-campaign-title">DND AI</span>
   </a>
   <ul class="navbar-nav" role="list">
-    <li><a href="index.html"             >🏠 Dashboard</a></li>
-    <li><a href="story-manager.html"     >📖 Campaigns</a></li>
-    <li><a href="character-manager.html" >🧙 Characters</a></li>
-    <li><a href="game.html"               class="active">⚔️ Play</a></li>
+    <li><a href="story-manager.html" >📖 Campaigns</a></li>
+    <li><a href="character-manager.html">🧙 Characters</a></li>
+    <li><a href="game.html" class="active">⚔️ Play</a></li>
   </ul>
   <div class="navbar-actions">
     <button class="btn btn-ghost btn-sm" id="settings-btn">⚙️ Settings</button>
@@ -29,33 +408,560 @@
 
 <div class="nav-drawer" id="nav-drawer" aria-hidden="true">
   <ul class="navbar-nav" role="list">
-    <li><a href="index.html"             >🏠 Dashboard</a></li>
-    <li><a href="story-manager.html"     >📖 Campaigns</a></li>
-    <li><a href="character-manager.html" >🧙 Characters</a></li>
-    <li><a href="game.html"               class="active">⚔️ Play</a></li>
+    <li><a href="story-manager.html" >📖 Campaigns</a></li>
+    <li><a href="character-manager.html">🧙 Characters</a></li>
+    <li><a href="game.html" class="active">⚔️ Play</a></li>
   </ul>
 </div>
 <div class="nav-drawer-overlay" id="nav-overlay"></div>
 
-<main class="page-wrapper">
-  <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:calc(100vh - var(--nav-height));text-align:center;padding:2rem;gap:1rem;">
-    <div style="font-size:5rem;opacity:0.3;">⚔️</div>
-    <h2 style="color:var(--color-primary);font-size:1.5rem;">The Adventure Awaits</h2>
-    <p style="color:var(--color-text-muted);max-width:420px;line-height:1.6;">
-      The AI Dungeon Master arrives in Stage 5. First, create your characters and a campaign,
-      then return here to begin your adventure.
+<!-- Main game layout -->
+<div class="game-wrap" id="game-wrap">
+
+  <!-- No story state -->
+  <div class="no-story-msg" id="no-story-state" style="display:none;">
+    <div style="font-size:4rem;opacity:0.3;">⚔️</div>
+    <h2 style="color:var(--color-primary);">No Active Campaign</h2>
+    <p style="color:var(--color-text-muted);max-width:380px;line-height:1.6;">
+      You need an active campaign to play. Create one or set an existing campaign to Active.
     </p>
     <div style="display:flex;gap:0.75rem;flex-wrap:wrap;justify-content:center;">
-      <a href="character-create.html" class="btn btn-primary">✨ Create a Character</a>
-      <a href="story-manager.html"    class="btn btn-accent" >📖 Create a Campaign</a>
-      <a href="index.html"            class="btn btn-ghost"  >← Dashboard</a>
+      <a href="story-manager.html" class="btn btn-primary">📖 Go to Campaigns</a>
+      <a href="character-create.html" class="btn btn-ghost">✨ Create a Character</a>
     </div>
   </div>
-</main>
+
+  <!-- Scene image area -->
+  <div class="scene-area" id="scene-area" style="display:none;">
+    <div class="scene-shimmer" id="scene-shimmer"></div>
+    <img class="scene-img" id="scene-img" src="" alt="Current scene" style="display:none;"
+         onload="this.style.display=''; document.getElementById('scene-shimmer').style.display='none';"
+         onerror="document.getElementById('scene-shimmer').style.display='';" />
+    <div class="scene-overlay">
+      <div class="scene-title" id="scene-title">Loading…</div>
+      <button class="scene-regen-btn" id="regen-scene-btn">🎲 Regenerate Image</button>
+    </div>
+  </div>
+
+  <!-- Lower area: char panel + chat -->
+  <div class="game-lower" id="game-lower" style="display:none;">
+
+    <!-- Character status sidebar -->
+    <aside class="char-panel" id="char-panel">
+      <div class="char-panel-header">Party Status</div>
+      <div id="char-cards">
+        <!-- Injected by JS -->
+      </div>
+    </aside>
+
+    <!-- DM chat -->
+    <div class="chat-panel">
+      <div class="chat-history-wrap">
+        <div class="chat-history" id="chat-history">
+          <!-- Messages injected here -->
+        </div>
+      </div>
+      <div class="chat-input-area">
+        <textarea
+          class="chat-textarea"
+          id="player-input"
+          placeholder="Describe your action… (Enter to send, Shift+Enter for new line)"
+          rows="2"
+          aria-label="Player action input"
+        ></textarea>
+        <button class="send-btn" id="send-btn" aria-label="Send action">⚔️ Act</button>
+      </div>
+    </div>
+  </div>
+
+</div><!-- .game-wrap -->
+
+<!-- Mobile char panel toggle -->
+<button class="mobile-char-toggle" id="mobile-char-btn">👥 Party</button>
+
+<!-- Character slide-over -->
+<div class="slideover-backdrop" id="slideover-backdrop"></div>
+<aside class="char-slideover" id="char-slideover" aria-label="Character details">
+  <button class="slideover-close" id="slideover-close" aria-label="Close">✕</button>
+  <div id="slideover-content"></div>
+</aside>
+
+<!-- Death overlay (hidden) -->
+<div class="death-overlay" id="death-overlay" style="display:none;">
+  <div style="font-size:4rem;">💀</div>
+  <h2>A Hero Falls!</h2>
+  <p id="death-message">A character has been reduced to 0 HP.</p>
+  <button class="btn btn-ghost" id="death-dismiss">Continue</button>
+</div>
 
 <script type="module">
 import { initCommonUI } from './js/app.js';
+import {
+  getActiveStory, getStory, saveStory, getCharacter, getItem,
+} from './js/db.js';
+import { showToast, getModifier, formatModifier } from './js/utils.js';
+import { sendDMMessage } from './js/dm-engine.js';
+import { generateImage } from './js/api-image.js';
+
 initCommonUI();
+
+// ── State ─────────────────────────────────────────────────────
+let activeStory    = null;
+let dmTyping       = false;
+let typingEl       = null;
+
+// ── Boot ──────────────────────────────────────────────────────
+boot();
+
+async function boot() {
+  activeStory = getActiveStory();
+
+  if (!activeStory) {
+    document.getElementById('no-story-state').style.display = '';
+    return;
+  }
+
+  document.getElementById('no-story-state').style.display = 'none';
+  document.getElementById('scene-area').style.display   = '';
+  document.getElementById('game-lower').style.display   = '';
+  document.getElementById('nav-campaign-title').textContent = activeStory.title;
+
+  renderScene();
+  renderCharPanel();
+  renderChatHistory();
+  scrollChatBottom(false);
+
+  // If chat is empty, send a DM opening message automatically
+  if (activeStory.dmChatHistory.length === 0) {
+    setTimeout(() => sendOpeningNarration(), 400);
+  }
+}
+
+// ── Scene rendering ───────────────────────────────────────────
+function renderScene() {
+  if (!activeStory) return;
+  const scene = activeStory.scenes[activeStory.currentSceneIndex]
+             || activeStory.scenes[activeStory.scenes.length - 1];
+
+  document.getElementById('scene-title').textContent = scene?.title || activeStory.title;
+
+  const img     = document.getElementById('scene-img');
+  const shimmer = document.getElementById('scene-shimmer');
+  const imageUrl = scene?.imageUrl || activeStory.sceneImageUrl;
+
+  if (imageUrl) {
+    shimmer.style.display = '';
+    img.style.display = 'none';
+    img.src = imageUrl;
+    // onload/onerror handlers in HTML will swap them
+  } else {
+    shimmer.style.display = '';
+    img.style.display = 'none';
+    // Poll for image availability
+    pollSceneImage(activeStory.id, scene?.id);
+  }
+}
+
+function pollSceneImage(storyId, sceneId) {
+  let attempts = 0;
+  const interval = setInterval(() => {
+    const st = getStory(storyId);
+    if (!st) { clearInterval(interval); return; }
+    const scene = sceneId ? st.scenes.find(s => s.id === sceneId) : st.scenes[st.currentSceneIndex];
+    const url = scene?.imageUrl || st.sceneImageUrl;
+    if (url) {
+      clearInterval(interval);
+      activeStory = st;
+      renderScene();
+    }
+    if (++attempts > 30) clearInterval(interval); // give up after ~60s
+  }, 2000);
+}
+
+// ── Character panel ───────────────────────────────────────────
+function renderCharPanel() {
+  if (!activeStory) return;
+  const container = document.getElementById('char-cards');
+  const chars = activeStory.characterIds.map(id => getCharacter(id)).filter(Boolean);
+
+  container.innerHTML = chars.map(ch => {
+    const hpPct = Math.max(0, Math.min(100, (ch.stats.hp / ch.stats.maxHp) * 100));
+    const hpColor = hpPct > 60 ? 'var(--color-success)' : hpPct > 25 ? 'var(--color-primary)' : 'var(--color-danger)';
+    const conditionHtml = ch.conditions.map(c =>
+      `<span class="condition-chip">${escHtml(c)}</span>`
+    ).join('');
+
+    return `
+      <div class="char-mini-card" data-char-id="${ch.id}" title="Click to view full sheet">
+        <div class="char-mini-top">
+          <div class="char-mini-portrait">
+            ${ch.portrait ? `<img src="${ch.portrait}" alt="" />` : '🧙'}
+          </div>
+          <div class="char-mini-info">
+            <div class="char-mini-name">${escHtml(ch.name)}</div>
+            <div class="char-mini-sub">Lvl ${ch.level} ${ch.class}</div>
+          </div>
+        </div>
+        <div class="hp-bar-wrap">
+          <div class="hp-bar-label">
+            <span>HP</span>
+            <span>${ch.stats.hp} / ${ch.stats.maxHp}</span>
+          </div>
+          <div class="hp-bar">
+            <div class="hp-bar-fill" style="width:${hpPct}%;background:${hpColor};"></div>
+          </div>
+        </div>
+        ${conditionHtml ? `<div class="condition-chips">${conditionHtml}</div>` : ''}
+        <div class="char-gold">💰 ${ch.gold || 0} gp</div>
+      </div>
+    `;
+  }).join('');
+
+  // Click to open slide-over
+  container.querySelectorAll('.char-mini-card').forEach(card => {
+    card.addEventListener('click', () => openSlideover(card.dataset.charId));
+  });
+
+  if (!chars.length) {
+    container.innerHTML = `<div style="padding:1rem;font-family:var(--font-ui);font-size:0.8rem;color:var(--color-text-faint);">No characters in this campaign.</div>`;
+  }
+}
+
+// ── Chat history rendering ────────────────────────────────────
+function renderChatHistory() {
+  if (!activeStory) return;
+  const container = document.getElementById('chat-history');
+  container.innerHTML = '';
+
+  if (activeStory.dmChatHistory.length === 0) {
+    const welcome = document.createElement('div');
+    welcome.style.cssText = 'text-align:center;padding:2rem;font-family:var(--font-body);font-size:0.9rem;color:var(--color-text-faint);font-style:italic;';
+    welcome.textContent = 'The Dungeon Master readies the dice…';
+    container.appendChild(welcome);
+    return;
+  }
+
+  activeStory.dmChatHistory.forEach(msg => {
+    appendMessageEl(msg.role, msg.content);
+  });
+}
+
+function appendMessageEl(role, content) {
+  const container = document.getElementById('chat-history');
+
+  const el = document.createElement('div');
+
+  if (role === 'assistant') {
+    el.className = 'msg-dm';
+    el.innerHTML = `
+      <div class="msg-dm-label">✦ Dungeon Master</div>
+      <div class="msg-dm-bubble">${formatMessageContent(content)}</div>
+    `;
+  } else if (role === 'user') {
+    el.className = 'msg-player';
+    el.innerHTML = `<div class="msg-player-bubble">${escHtml(content)}</div>`;
+  }
+
+  container.appendChild(el);
+  return el;
+}
+
+function appendToolBadge(summary) {
+  const container = document.getElementById('chat-history');
+  const el = document.createElement('div');
+  el.className = 'tool-badge';
+
+  // Apply colour class based on content
+  if (summary.includes('💀') || summary.includes('fallen')) el.classList.add('tool-death');
+  else if (summary.includes('⚔️') || summary.includes('damage')) el.classList.add('tool-damage');
+  else if (summary.includes('❤️') || summary.includes('heal')) el.classList.add('tool-heal');
+  else if (summary.includes('🎒') || summary.includes('item')) el.classList.add('tool-item');
+  else if (summary.includes('🗺️') || summary.includes('Scene')) el.classList.add('tool-scene');
+
+  el.textContent = summary;
+  container.appendChild(el);
+  return el;
+}
+
+function showTypingIndicator() {
+  const container = document.getElementById('chat-history');
+  typingEl = document.createElement('div');
+  typingEl.className = 'typing-indicator';
+  typingEl.innerHTML = `
+    <div class="typing-dot"></div>
+    <div class="typing-dot"></div>
+    <div class="typing-dot"></div>
+    <span class="typing-label">The Dungeon Master ponders…</span>
+  `;
+  container.appendChild(typingEl);
+  scrollChatBottom();
+  return typingEl;
+}
+
+function hideTypingIndicator() {
+  if (typingEl) { typingEl.remove(); typingEl = null; }
+}
+
+function scrollChatBottom(smooth = true) {
+  const container = document.getElementById('chat-history');
+  if (smooth) {
+    container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+  } else {
+    container.scrollTop = container.scrollHeight;
+  }
+}
+
+// ── Send player message ───────────────────────────────────────
+async function sendOpeningNarration() {
+  if (!activeStory) return;
+  await handleSend('(Begin the adventure. Set the scene dramatically and welcome the players to the opening scene. Describe the environment and give the players something to react to.)');
+}
+
+async function handleSend(overrideMessage) {
+  if (dmTyping || !activeStory) return;
+
+  const input = document.getElementById('player-input');
+  const message = overrideMessage || input?.value.trim();
+  if (!message) return;
+
+  if (!overrideMessage) input.value = '';
+
+  // Show player message in chat (only if it's a real player action)
+  if (!overrideMessage) {
+    appendMessageEl('user', message);
+    scrollChatBottom();
+  }
+
+  dmTyping = true;
+  const sendBtn = document.getElementById('send-btn');
+  if (sendBtn) { sendBtn.disabled = true; }
+
+  showTypingIndicator();
+
+  try {
+    const result = await sendDMMessage(activeStory.id, message);
+
+    hideTypingIndicator();
+
+    // Show tool badges BEFORE DM response
+    result.toolSummaries.forEach(summary => {
+      appendToolBadge(summary);
+    });
+
+    // Show DM response
+    appendMessageEl('assistant', result.cleanResponse);
+    scrollChatBottom();
+
+    // Refresh char panel in case HP/conditions changed
+    activeStory = getStory(activeStory.id) || activeStory;
+    renderCharPanel();
+
+    // If scene advanced, update scene display
+    if (result.sceneAdvanced) {
+      activeStory = getStory(activeStory.id) || activeStory;
+      renderScene();
+      showToast('Scene advanced!', 'info');
+    }
+
+    // Check for character deaths
+    const deathSummary = result.toolSummaries.find(s => s.includes('fallen') || s.includes('💀'));
+    if (deathSummary) {
+      showDeathOverlay(deathSummary);
+    }
+
+  } catch (err) {
+    hideTypingIndicator();
+    const errMsg = err.message.includes('API key') ? 'Set your Gemini API key in ⚙️ Settings.' : err.message;
+    appendToolBadge('⚠️ Error: ' + errMsg);
+    scrollChatBottom();
+    showToast(errMsg, 'error');
+  } finally {
+    dmTyping = false;
+    if (sendBtn) { sendBtn.disabled = false; }
+    input?.focus();
+  }
+}
+
+// ── Send button / keyboard ────────────────────────────────────
+document.getElementById('send-btn').addEventListener('click', () => handleSend());
+
+document.getElementById('player-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    handleSend();
+  }
+});
+
+// Auto-grow textarea
+document.getElementById('player-input').addEventListener('input', function() {
+  this.style.height = 'auto';
+  this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+});
+
+// ── Regenerate scene image ────────────────────────────────────
+document.getElementById('regen-scene-btn').addEventListener('click', async () => {
+  if (!activeStory) return;
+  const scene = activeStory.scenes[activeStory.currentSceneIndex];
+  if (!scene) return;
+
+  const btn = document.getElementById('regen-scene-btn');
+  btn.textContent = '⏳ Generating…';
+  btn.disabled = true;
+
+  const shimmer = document.getElementById('scene-shimmer');
+  const img     = document.getElementById('scene-img');
+  shimmer.style.display = '';
+  img.style.display = 'none';
+
+  try {
+    const prompt = (scene.imagePrompt || scene.description || activeStory.setting || 'fantasy adventure scene')
+      + ', fantasy digital art, cinematic, dramatic lighting, wide angle';
+    const url = await generateImage(prompt, 768, 432, Date.now());
+
+    const st = getStory(activeStory.id);
+    if (st) {
+      scene.imageUrl = url;
+      st.scenes[st.currentSceneIndex] = scene;
+      st.sceneImageUrl = url;
+      saveStory(st);
+      activeStory = st;
+    }
+    renderScene();
+    showToast('New scene image generated!', 'success');
+  } catch (err) {
+    showToast('Image generation failed.', 'error');
+    shimmer.style.display = 'none';
+  } finally {
+    btn.textContent = '🎲 Regenerate Image';
+    btn.disabled = false;
+  }
+});
+
+// ── Character slide-over ──────────────────────────────────────
+function openSlideover(charId) {
+  const char = getCharacter(charId);
+  if (!char) return;
+
+  const content = document.getElementById('slideover-content');
+
+  const statNames = ['strength','dexterity','constitution','intelligence','wisdom','charisma'];
+  const statsHtml = statNames.map(s => `
+    <div style="text-align:center;background:var(--color-surface-2);border:1px solid var(--color-border);border-radius:var(--radius);padding:0.6rem 0.4rem;">
+      <div style="font-family:var(--font-display);font-size:1.1rem;color:var(--color-primary);">${formatModifier(char.stats[s])}</div>
+      <div style="font-family:var(--font-display);font-size:0.7rem;color:var(--color-text-faint);">${s.slice(0,3).toUpperCase()}</div>
+      <div style="font-family:var(--font-ui);font-size:0.75rem;">${char.stats[s]}</div>
+    </div>
+  `).join('');
+
+  const invHtml = char.inventory.map(inst => {
+    const item = getItem(inst.itemId);
+    if (!item) return '';
+    return `<div style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid var(--color-border);">
+      <span style="font-size:0.85rem;">
+        ${item.iconBase64 ? `<img src="${item.iconBase64}" style="width:24px;height:24px;border-radius:3px;vertical-align:middle;" />` : '⚔️'}
+      </span>
+      <span style="font-family:var(--font-ui);font-size:0.8rem;flex:1;">${escHtml(item.name)}</span>
+      <span style="font-family:var(--font-ui);font-size:0.7rem;color:var(--color-text-faint);">x${inst.quantity}</span>
+    </div>`;
+  }).join('');
+
+  content.innerHTML = `
+    <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1.25rem;">
+      <div style="width:64px;height:64px;border-radius:50%;overflow:hidden;background:var(--color-surface-2);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:2rem;">
+        ${char.portrait ? `<img src="${char.portrait}" style="width:100%;height:100%;object-fit:cover;" />` : '🧙'}
+      </div>
+      <div>
+        <h2 style="font-family:var(--font-display);font-size:1.1rem;color:var(--color-primary);">${escHtml(char.name)}</h2>
+        <div style="font-family:var(--font-ui);font-size:0.78rem;color:var(--color-text-faint);">Level ${char.level} ${char.race} ${char.class}</div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.5rem;margin-bottom:1.25rem;">
+      ${statsHtml}
+    </div>
+
+    <div style="margin-bottom:1rem;">
+      <div style="display:flex;justify-content:space-between;font-family:var(--font-ui);font-size:0.75rem;margin-bottom:0.25rem;">
+        <span>HP</span><span>${char.stats.hp} / ${char.stats.maxHp}</span>
+      </div>
+      <div style="height:8px;background:var(--color-surface-3);border-radius:4px;overflow:hidden;">
+        <div style="height:100%;width:${Math.max(0,Math.min(100,(char.stats.hp/char.stats.maxHp)*100))}%;background:var(--color-danger);border-radius:4px;transition:width 0.5s;"></div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:1rem;margin-bottom:1.25rem;font-family:var(--font-ui);font-size:0.8rem;">
+      <div>AC <strong>${char.stats.ac}</strong></div>
+      <div>💰 <strong>${char.gold} gp</strong></div>
+      <div>XP <strong>${char.xp}</strong></div>
+    </div>
+
+    ${char.conditions.length ? `
+      <div style="margin-bottom:1rem;">
+        <div style="font-family:var(--font-display);font-size:0.75rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--color-text-faint);margin-bottom:0.4rem;">Conditions</div>
+        <div class="condition-chips">${char.conditions.map(c => `<span class="condition-chip">${escHtml(c)}</span>`).join('')}</div>
+      </div>
+    ` : ''}
+
+    ${char.inventory.length ? `
+      <div style="margin-bottom:1rem;">
+        <div style="font-family:var(--font-display);font-size:0.75rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--color-text-faint);margin-bottom:0.6rem;">Inventory</div>
+        ${invHtml}
+      </div>
+    ` : ''}
+
+    ${char.backstory ? `
+      <div>
+        <div style="font-family:var(--font-display);font-size:0.75rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--color-text-faint);margin-bottom:0.4rem;">Backstory</div>
+        <p style="font-family:var(--font-body);font-size:0.88rem;line-height:1.6;font-style:italic;color:var(--color-text-muted);">${escHtml(char.backstory)}</p>
+      </div>
+    ` : ''}
+  `;
+
+  document.getElementById('char-slideover').classList.add('open');
+  document.getElementById('slideover-backdrop').classList.add('open');
+}
+
+document.getElementById('slideover-close').addEventListener('click', closeSlideover);
+document.getElementById('slideover-backdrop').addEventListener('click', closeSlideover);
+
+function closeSlideover() {
+  document.getElementById('char-slideover').classList.remove('open');
+  document.getElementById('slideover-backdrop').classList.remove('open');
+}
+
+// ── Death overlay ─────────────────────────────────────────────
+function showDeathOverlay(msg) {
+  document.getElementById('death-message').textContent = msg;
+  document.getElementById('death-overlay').style.display = 'flex';
+}
+document.getElementById('death-dismiss').addEventListener('click', () => {
+  document.getElementById('death-overlay').style.display = 'none';
+});
+
+// ── Mobile char panel toggle ──────────────────────────────────
+document.getElementById('mobile-char-btn').addEventListener('click', () => {
+  const panel = document.getElementById('char-panel');
+  panel.classList.toggle('open');
+  document.getElementById('mobile-char-btn').textContent =
+    panel.classList.contains('open') ? '✕ Close' : '👥 Party';
+});
+
+// ── Utilities ─────────────────────────────────────────────────
+function escHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function formatMessageContent(text) {
+  if (!text) return '';
+  // Convert newlines to <br>, escape HTML, make **bold** work
+  let safe = escHtml(text);
+  safe = safe.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  safe = safe.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  safe = safe.replace(/\n/g, '<br />');
+  return safe;
+}
 </script>
 </body>
 </html>

@@ -1,0 +1,1126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Item Library — DND AI</title>
+  <meta name="description" content="Browse and manage all discovered magical items, weapons, and artifacts from your DND AI adventures." />
+
+  <!-- OpenGraph -->
+  <meta property="og:title"       content="Item Library — DND AI" />
+  <meta property="og:description" content="Your complete treasury of magical items, weapons, potions, and artifacts from AI-powered DND campaigns." />
+  <meta property="og:type"        content="website" />
+
+  <!-- Favicon (inline SVG d20) -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpolygon points='16,2 30,10 30,22 16,30 2,22 2,10' fill='%230d0d0f' stroke='%23c9a84c' stroke-width='2'/%3E%3Ctext x='16' y='21' text-anchor='middle' font-size='14' fill='%23c9a84c' font-family='serif'%3E20%3C/text%3E%3C/svg%3E" />
+
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/components.css" />
+  <link rel="stylesheet" href="css/layout.css" />
+
+  <style>
+    /* ── Page Layout ── */
+    .il-page {
+      padding: 2rem 0 3rem;
+    }
+
+    .il-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 1.75rem;
+      flex-wrap: wrap;
+    }
+
+    .il-header h1 {
+      font-size: clamp(1.6rem, 3vw, 2.2rem);
+      margin-bottom: 0.3rem;
+    }
+
+    .il-header > div > p {
+      color: var(--color-text-muted);
+      font-size: 0.95rem;
+      margin: 0;
+    }
+
+    .il-header-actions {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    /* ── Stats Bar ── */
+    .il-stats {
+      display: flex;
+      gap: 0.75rem;
+      margin-bottom: 1.5rem;
+      flex-wrap: wrap;
+    }
+
+    .il-stat-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.3rem 0.8rem;
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: 20px;
+      font-family: var(--font-ui);
+      font-size: 0.8rem;
+      color: var(--color-text-muted);
+    }
+
+    .il-stat-chip .chip-count {
+      font-weight: 700;
+      color: var(--color-text);
+    }
+
+    /* ── Filters ── */
+    .il-filters {
+      display: flex;
+      gap: 0.75rem;
+      margin-bottom: 1.75rem;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .il-filters input[type="search"] {
+      flex: 1;
+      min-width: 180px;
+      max-width: 300px;
+    }
+
+    .il-filters select {
+      width: auto;
+      min-width: 130px;
+    }
+
+    /* ── Item Grid ── */
+    .il-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(188px, 1fr));
+      gap: 1.25rem;
+    }
+
+    /* ── Item Card ── */
+    .item-card {
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      cursor: pointer;
+      transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition);
+      display: flex;
+      flex-direction: column;
+      animation: fadeIn 0.3s ease forwards;
+    }
+
+    .item-card:hover   { transform: translateY(-3px); }
+    .item-card:focus   { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+
+    .item-card.rarity-common    { border-color: var(--rarity-common); }
+    .item-card.rarity-uncommon  { border-color: var(--rarity-uncommon);  box-shadow: 0 0 14px rgba(68,204,102,0.15); }
+    .item-card.rarity-rare      { border-color: var(--rarity-rare);      box-shadow: 0 0 18px rgba(68,136,255,0.2); }
+    .item-card.rarity-legendary { border-color: var(--rarity-legendary); box-shadow: 0 0 24px rgba(255,153,0,0.25); }
+
+    .item-card:hover.rarity-uncommon  { box-shadow: 0 4px 20px rgba(68,204,102,0.3); }
+    .item-card:hover.rarity-rare      { box-shadow: 0 4px 24px rgba(68,136,255,0.35); }
+    .item-card:hover.rarity-legendary { box-shadow: 0 4px 32px rgba(255,153,0,0.4); }
+
+    /* Icon area */
+    .item-icon-wrap {
+      aspect-ratio: 1;
+      background: var(--color-surface-2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .item-icon-wrap img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .item-icon-placeholder {
+      font-size: 3rem;
+      opacity: 0.35;
+      user-select: none;
+    }
+
+    /* Card body */
+    .item-card-body {
+      padding: 0.85rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+      flex: 1;
+    }
+
+    .item-card-name {
+      font-family: var(--font-display);
+      font-size: 0.92rem;
+      font-weight: 600;
+      color: var(--color-text);
+      line-height: 1.3;
+    }
+
+    .item-card-badges {
+      display: flex;
+      gap: 0.35rem;
+      flex-wrap: wrap;
+    }
+
+    .item-card-desc {
+      font-size: 0.82rem;
+      color: var(--color-text-muted);
+      line-height: 1.45;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .item-card-stats {
+      font-size: 0.76rem;
+      color: var(--color-text-faint);
+      margin-top: auto;
+      padding-top: 0.3rem;
+    }
+
+    /* ── Rarity badge overrides ── */
+    .badge-common    { background: rgba(154,154,154,0.12); color: var(--rarity-common);    border: 1px solid rgba(154,154,154,0.25); }
+    .badge-uncommon  { background: rgba(68,204,102,0.1);   color: var(--rarity-uncommon);  border: 1px solid rgba(68,204,102,0.25); }
+    .badge-rare      { background: rgba(68,136,255,0.1);   color: var(--rarity-rare);      border: 1px solid rgba(68,136,255,0.25); }
+    .badge-legendary { background: rgba(255,153,0,0.1);    color: var(--rarity-legendary); border: 1px solid rgba(255,153,0,0.25); }
+
+    /* ── Detail Modal ── */
+    .modal-detail { max-width: 660px; }
+
+    .detail-layout {
+      display: flex;
+      gap: 1.5rem;
+      align-items: flex-start;
+    }
+
+    .detail-icon-col { flex-shrink: 0; width: 168px; }
+
+    .detail-icon-frame {
+      width: 168px;
+      height: 168px;
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      border: 2px solid var(--color-border);
+      background: var(--color-surface-2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 0.75rem;
+    }
+
+    .detail-icon-frame img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .detail-icon-frame.rarity-common    { border-color: var(--rarity-common); }
+    .detail-icon-frame.rarity-uncommon  { border-color: var(--rarity-uncommon); box-shadow: 0 0 16px rgba(68,204,102,0.25); }
+    .detail-icon-frame.rarity-rare      { border-color: var(--rarity-rare);     box-shadow: 0 0 20px rgba(68,136,255,0.3); }
+    .detail-icon-frame.rarity-legendary { border-color: var(--rarity-legendary);box-shadow: 0 0 28px rgba(255,153,0,0.35); }
+
+    .detail-info-col { flex: 1; min-width: 0; }
+
+    .detail-name {
+      font-family: var(--font-display);
+      font-size: 1.4rem;
+      line-height: 1.2;
+      margin-bottom: 0.65rem;
+    }
+
+    .detail-badges { display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
+
+    .detail-description { font-size: 0.95rem; margin-bottom: 0.9rem; }
+
+    .detail-lore {
+      font-family: var(--font-body);
+      font-style: italic;
+      color: var(--color-text-muted);
+      font-size: 0.9rem;
+      padding: 0.75rem;
+      background: var(--color-surface-2);
+      border-left: 3px solid var(--color-primary-dark);
+      border-radius: 0 var(--radius) var(--radius) 0;
+      margin-bottom: 0.9rem;
+      line-height: 1.6;
+    }
+
+    .detail-stats-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.5rem;
+      margin-bottom: 0.9rem;
+    }
+
+    .detail-stat {
+      background: var(--color-surface-2);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius);
+      padding: 0.5rem 0.7rem;
+    }
+
+    .detail-stat-label {
+      font-family: var(--font-ui);
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--color-text-faint);
+      margin-bottom: 0.15rem;
+    }
+
+    .detail-stat-value { font-size: 0.92rem; font-weight: 600; }
+
+    .detail-holders-label {
+      font-family: var(--font-ui);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--color-text-faint);
+      margin-bottom: 0.5rem;
+    }
+
+    .holder-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.25rem 0.65rem;
+      background: var(--color-surface-3);
+      border: 1px solid var(--color-border);
+      border-radius: 20px;
+      font-family: var(--font-ui);
+      font-size: 0.8rem;
+      color: var(--color-text-muted);
+      margin: 0 0.35rem 0.35rem 0;
+    }
+
+    .detail-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 1.25rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--color-border);
+    }
+
+    /* Regenerate icon spinner inside detail */
+    .regen-spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid var(--color-border);
+      border-top-color: var(--color-primary);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      vertical-align: middle;
+    }
+
+    /* ── Forge Wizard Modal ── */
+    .modal-forge { max-width: 520px; }
+
+    .forge-view { display: none; }
+    .forge-view.active { display: block; }
+
+    .forge-preview-icon {
+      width: 128px;
+      height: 128px;
+      border-radius: var(--radius-lg);
+      border: 2px solid var(--color-border);
+      background: var(--color-surface-2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      margin: 0 auto 1.1rem;
+      position: relative;
+    }
+
+    .forge-preview-icon img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .forge-icon-spinner {
+      position: absolute;
+      inset: 0;
+      background: rgba(13,13,15,0.75);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      font-family: var(--font-ui);
+      font-size: 0.72rem;
+      color: var(--color-primary);
+    }
+
+    .forge-icon-spinner .spin-ring {
+      width: 22px;
+      height: 22px;
+      border: 2px solid var(--color-primary-dark);
+      border-top-color: var(--color-primary);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    .forge-preview-center {
+      text-align: center;
+      margin-bottom: 1.25rem;
+    }
+
+    .forge-preview-center .prev-name {
+      font-family: var(--font-display);
+      font-size: 1.2rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .forge-preview-center .prev-badges {
+      display: flex;
+      gap: 0.5rem;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .forge-stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+
+    .forge-footer {
+      display: flex;
+      gap: 0.75rem;
+      margin-top: 1.25rem;
+    }
+
+    /* ── Mobile ── */
+    @media (max-width: 640px) {
+      .detail-layout { flex-direction: column; align-items: center; }
+      .detail-icon-col { width: 100%; display: flex; flex-direction: column; align-items: center; }
+      .detail-icon-frame { width: 148px; height: 148px; }
+      .detail-info-col { width: 100%; }
+      .il-filters input[type="search"] { max-width: 100%; width: 100%; }
+      .il-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 1rem; }
+      .forge-stats-grid { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 420px) {
+      .il-grid { grid-template-columns: repeat(2, 1fr); }
+      .il-stat-chip:not(:first-child) { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Navigation ── -->
+<nav class="navbar" role="navigation" aria-label="Main navigation">
+  <a href="index.html" class="navbar-brand">
+    <span class="brand-icon">⚔️</span>
+    DND AI
+  </a>
+
+  <ul class="navbar-nav" role="list">
+    <li><a href="index.html">🏠 Dashboard</a></li>
+    <li><a href="character-create.html">✨ Create Character</a></li>
+    <li><a href="character-manager.html">🧙 Characters</a></li>
+    <li><a href="story-manager.html">📖 Campaigns</a></li>
+    <li><a href="item-library.html" class="active">📦 Items</a></li>
+    <li><a href="game.html">⚔️ Play</a></li>
+  </ul>
+
+  <div class="navbar-actions">
+    <button class="btn btn-ghost btn-sm" id="settings-btn" title="Settings">⚙️ Settings</button>
+  </div>
+
+  <button class="hamburger" id="hamburger-btn" aria-label="Open menu">☰</button>
+</nav>
+
+<!-- Mobile nav drawer -->
+<div class="nav-drawer" id="nav-drawer" aria-hidden="true">
+  <ul class="navbar-nav" role="list">
+    <li><a href="index.html">🏠 Dashboard</a></li>
+    <li><a href="character-create.html">✨ Create Character</a></li>
+    <li><a href="character-manager.html">🧙 Characters</a></li>
+    <li><a href="story-manager.html">📖 Campaigns</a></li>
+    <li><a href="item-library.html" class="active">📦 Items</a></li>
+    <li><a href="game.html">⚔️ Play</a></li>
+  </ul>
+</div>
+<div class="nav-drawer-overlay" id="nav-overlay"></div>
+
+<!-- ── Main ── -->
+<main class="page-wrapper">
+  <div class="page-container il-page">
+
+    <!-- Header -->
+    <div class="il-header">
+      <div>
+        <h1>📦 Item Library</h1>
+        <p>Your treasury of discovered artifacts, weapons, and magical items.</p>
+      </div>
+      <div class="il-header-actions">
+        <button class="btn btn-ghost btn-sm" id="gen-all-btn">🎨 Generate Missing Icons</button>
+        <button class="btn btn-primary" id="create-item-btn">✨ Forge New Item</button>
+      </div>
+    </div>
+
+    <!-- Stats Bar -->
+    <div class="il-stats" id="il-stats"></div>
+
+    <!-- Filters -->
+    <div class="il-filters">
+      <input type="search" id="search-input" placeholder="Search by name or description…" autocomplete="off" />
+      <select id="type-filter">
+        <option value="">All Types</option>
+        <option value="weapon">⚔️ Weapon</option>
+        <option value="armor">🛡️ Armor</option>
+        <option value="potion">⚗️ Potion</option>
+        <option value="misc">📦 Misc</option>
+        <option value="quest">📜 Quest</option>
+      </select>
+      <select id="rarity-filter">
+        <option value="">All Rarities</option>
+        <option value="common">Common</option>
+        <option value="uncommon">Uncommon</option>
+        <option value="rare">Rare</option>
+        <option value="legendary">Legendary</option>
+      </select>
+      <select id="sort-select">
+        <option value="newest">Newest First</option>
+        <option value="oldest">Oldest First</option>
+        <option value="name">Name A–Z</option>
+        <option value="rarity">By Rarity</option>
+      </select>
+    </div>
+
+    <!-- Item Grid -->
+    <div class="il-grid" id="il-grid"></div>
+
+    <!-- Empty State -->
+    <div class="empty-state hidden" id="empty-state">
+      <div class="empty-state-icon">📦</div>
+      <div class="empty-state-title" id="empty-title">No items found</div>
+      <div class="empty-state-text" id="empty-text">
+        Your treasury is empty. Forge your first item or discover loot through adventures.
+      </div>
+      <button class="btn btn-primary mt-4" id="empty-create-btn">✨ Forge First Item</button>
+    </div>
+
+  </div>
+</main>
+
+<!-- ── Item Detail Modal ── -->
+<div class="modal-overlay hidden" id="detail-modal" role="dialog" aria-modal="true" aria-labelledby="detail-name">
+  <div class="modal modal-detail">
+    <div class="modal-header">
+      <span class="modal-title" id="detail-modal-title">Item Details</span>
+      <button class="modal-close" id="detail-close" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="detail-layout">
+
+        <!-- Icon column -->
+        <div class="detail-icon-col">
+          <div class="detail-icon-frame" id="detail-icon-frame">
+            <span style="font-size:3.5rem;opacity:0.35" id="detail-icon-placeholder">📦</span>
+            <img id="detail-icon-img" class="hidden" alt="" />
+          </div>
+          <button class="btn btn-ghost btn-sm w-full" id="detail-regen-btn" style="font-size:0.78rem;">🎨 Regen Icon</button>
+        </div>
+
+        <!-- Info column -->
+        <div class="detail-info-col">
+          <h2 class="detail-name" id="detail-name">—</h2>
+          <div class="detail-badges" id="detail-badges"></div>
+          <p class="detail-description" id="detail-description"></p>
+          <div class="detail-lore" id="detail-lore"></div>
+          <div class="detail-stats-grid" id="detail-stats"></div>
+          <div id="detail-holders" class="hidden">
+            <div class="detail-holders-label">Held by</div>
+            <div id="detail-holders-list"></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+    <div class="detail-footer">
+      <button class="btn btn-danger btn-sm" id="detail-delete-btn">🗑️ Delete Item</button>
+      <span style="font-family:var(--font-ui);font-size:0.75rem;color:var(--color-text-faint);" id="detail-date"></span>
+    </div>
+  </div>
+</div>
+
+<!-- ── Forge Item Modal ── -->
+<div class="modal-overlay hidden" id="forge-modal" role="dialog" aria-modal="true" aria-labelledby="forge-title">
+  <div class="modal modal-forge">
+    <div class="modal-header">
+      <span class="modal-title" id="forge-title">✨ Forge New Item</span>
+      <button class="modal-close" id="forge-close" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- Step 1: Input form -->
+      <div class="forge-view active" id="forge-form-view">
+        <div class="form-group">
+          <label for="forge-name">Item Name *</label>
+          <input type="text" id="forge-name" placeholder="e.g. Shadowfang Dagger, Potion of Giant Strength…" maxlength="60" />
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+          <div class="form-group">
+            <label for="forge-type">Type *</label>
+            <select id="forge-type">
+              <option value="weapon">⚔️ Weapon</option>
+              <option value="armor">🛡️ Armor</option>
+              <option value="potion">⚗️ Potion</option>
+              <option value="misc">📦 Misc</option>
+              <option value="quest">📜 Quest</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="forge-rarity">Rarity *</label>
+            <select id="forge-rarity">
+              <option value="common">Common</option>
+              <option value="uncommon">Uncommon</option>
+              <option value="rare">Rare</option>
+              <option value="legendary">Legendary</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-hint" style="margin-bottom:1.25rem;">
+          The AI will craft a description, lore, stats, and icon based on your inputs.
+        </div>
+        <button class="btn btn-primary w-full" id="forge-generate-btn">🤖 Generate with AI</button>
+      </div>
+
+      <!-- Step 2: Preview & edit -->
+      <div class="forge-view" id="forge-preview-view">
+        <!-- Icon preview -->
+        <div class="forge-preview-icon" id="forge-preview-icon-wrap">
+          <span style="font-size:2.5rem;opacity:0.35" id="forge-preview-placeholder">📦</span>
+          <img id="forge-preview-img" class="hidden" alt="Generated item icon" />
+          <div class="forge-icon-spinner hidden" id="forge-icon-spinner">
+            <div class="spin-ring"></div>
+            <span>Generating icon…</span>
+          </div>
+        </div>
+
+        <!-- Name + badges -->
+        <div class="forge-preview-center">
+          <div class="prev-name" id="forge-prev-name">—</div>
+          <div class="prev-badges" id="forge-prev-badges"></div>
+        </div>
+
+        <!-- Editable fields -->
+        <div class="form-group">
+          <label for="forge-desc-edit">Description</label>
+          <textarea id="forge-desc-edit" rows="3"></textarea>
+        </div>
+        <div class="form-group">
+          <label for="forge-lore-edit">Lore</label>
+          <textarea id="forge-lore-edit" rows="3" style="font-style:italic;color:var(--color-text-muted);"></textarea>
+        </div>
+        <div class="forge-stats-grid" id="forge-stats-grid"></div>
+
+        <div class="forge-footer">
+          <button class="btn btn-ghost" id="forge-back-btn">← Back</button>
+          <button class="btn btn-primary" id="forge-save-btn" style="flex:1;">📦 Add to Library</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { initCommonUI }                      from './js/app.js';
+  import { getAllItems, getItem, saveItem, deleteItem, getAllCharacters } from './js/db.js';
+  import { geminiGenerate, hasGeminiKey }      from './js/api-gemini.js';
+  import { generateIconBase64, buildIconPrompt } from './js/api-image.js';
+  import { uuid, showToast, escapeHtml, formatDate } from './js/utils.js';
+
+  initCommonUI();
+
+  // ── Constants ─────────────────────────────────────────────────
+
+  const TYPE_ICONS   = { weapon:'⚔️', armor:'🛡️', potion:'⚗️', misc:'📦', quest:'📜' };
+  const RARITY_ORDER = { common:0, uncommon:1, rare:2, legendary:3 };
+
+  // ── State ──────────────────────────────────────────────────────
+
+  let allItems      = [];
+  let allCharacters = [];
+  let activeItemId  = null;
+  let forgePending  = null;   // item object assembled during forge wizard
+
+  // ── Data loading ───────────────────────────────────────────────
+
+  function loadAll() {
+    allItems      = getAllItems();
+    allCharacters = getAllCharacters();
+  }
+
+  // ── Stats bar ──────────────────────────────────────────────────
+
+  function renderStats() {
+    const el = document.getElementById('il-stats');
+    const counts = { common:0, uncommon:0, rare:0, legendary:0 };
+    allItems.forEach(i => { if (counts[i.rarity] !== undefined) counts[i.rarity]++; });
+    const noIcon = allItems.filter(i => !i.iconBase64).length;
+
+    el.innerHTML = [
+      `<div class="il-stat-chip"><span class="chip-count">${allItems.length}</span>&nbsp;Total</div>`,
+      counts.uncommon  ? `<div class="il-stat-chip" style="color:var(--rarity-uncommon)"><span class="chip-count">${counts.uncommon}</span>&nbsp;Uncommon</div>` : '',
+      counts.rare      ? `<div class="il-stat-chip" style="color:var(--rarity-rare)"><span class="chip-count">${counts.rare}</span>&nbsp;Rare</div>` : '',
+      counts.legendary ? `<div class="il-stat-chip" style="color:var(--rarity-legendary)"><span class="chip-count">${counts.legendary}</span>&nbsp;Legendary</div>` : '',
+      noIcon           ? `<div class="il-stat-chip" style="color:var(--color-text-faint)"><span class="chip-count">${noIcon}</span>&nbsp;No Icon</div>` : '',
+    ].join('');
+  }
+
+  // ── Filter + sort ──────────────────────────────────────────────
+
+  function getFiltered() {
+    const q      = document.getElementById('search-input').value.toLowerCase().trim();
+    const type   = document.getElementById('type-filter').value;
+    const rarity = document.getElementById('rarity-filter').value;
+    const sortBy = document.getElementById('sort-select').value;
+
+    let result = allItems.filter(item => {
+      if (q && !item.name.toLowerCase().includes(q) && !(item.description || '').toLowerCase().includes(q)) return false;
+      if (type   && item.type   !== type)   return false;
+      if (rarity && item.rarity !== rarity) return false;
+      return true;
+    });
+
+    if      (sortBy === 'name')   result.sort((a,b) => a.name.localeCompare(b.name));
+    else if (sortBy === 'rarity') result.sort((a,b) => (RARITY_ORDER[b.rarity]||0) - (RARITY_ORDER[a.rarity]||0));
+    else if (sortBy === 'oldest') result.sort((a,b) => a.createdAt - b.createdAt);
+    else                          result.sort((a,b) => b.createdAt - a.createdAt);
+
+    return result;
+  }
+
+  // ── Grid rendering ─────────────────────────────────────────────
+
+  function renderGrid() {
+    const filtered = getFiltered();
+    const grid  = document.getElementById('il-grid');
+    const empty = document.getElementById('empty-state');
+
+    if (filtered.length === 0) {
+      grid.innerHTML = '';
+      grid.classList.add('hidden');
+      empty.classList.remove('hidden');
+
+      const hasAny = allItems.length > 0;
+      document.getElementById('empty-title').textContent = hasAny ? 'No items match your filters' : 'Your treasury is empty';
+      document.getElementById('empty-text').textContent  = hasAny
+        ? 'Try adjusting the search or filters above.'
+        : 'Forge your first item below, or discover loot through adventures.';
+      document.getElementById('empty-create-btn').classList.toggle('hidden', hasAny);
+      return;
+    }
+
+    empty.classList.add('hidden');
+    grid.classList.remove('hidden');
+    grid.innerHTML = filtered.map(cardHTML).join('');
+
+    grid.querySelectorAll('.item-card').forEach(card => {
+      card.addEventListener('click', () => openDetail(card.dataset.id));
+    });
+  }
+
+  function cardHTML(item) {
+    const iconContent = item.iconBase64
+      ? `<img src="${item.iconBase64}" alt="" loading="lazy" />`
+      : `<span class="item-icon-placeholder">${TYPE_ICONS[item.type] || '📦'}</span>`;
+
+    const statBits = [];
+    if (item.stats?.damage)     statBits.push(`⚔️ ${item.stats.damage}`);
+    if (item.stats?.armorClass) statBits.push(`🛡️ AC ${item.stats.armorClass}`);
+    if (item.stats?.value)      statBits.push(`💰 ${item.stats.value}gp`);
+
+    return `
+      <div class="item-card rarity-${item.rarity}" data-id="${item.id}"
+           tabindex="0" role="button" aria-label="View ${escapeHtml(item.name)}">
+        <div class="item-icon-wrap">${iconContent}</div>
+        <div class="item-card-body">
+          <div class="item-card-name">${escapeHtml(item.name)}</div>
+          <div class="item-card-badges">
+            <span class="badge badge-${item.rarity}" style="font-size:0.68rem;">${cap(item.rarity)}</span>
+            <span class="badge" style="font-size:0.68rem;">${TYPE_ICONS[item.type]} ${cap(item.type)}</span>
+          </div>
+          ${item.description ? `<div class="item-card-desc">${escapeHtml(item.description)}</div>` : ''}
+          ${statBits.length  ? `<div class="item-card-stats">${statBits.join(' · ')}</div>` : ''}
+        </div>
+      </div>`;
+  }
+
+  function cap(s) { return s ? s[0].toUpperCase() + s.slice(1) : ''; }
+
+  // ── Detail modal ───────────────────────────────────────────────
+
+  function openDetail(itemId) {
+    const item = getItem(itemId);
+    if (!item) return;
+    activeItemId = itemId;
+
+    // Title & core text
+    document.getElementById('detail-modal-title').textContent = item.name;
+    document.getElementById('detail-name').textContent        = item.name;
+    document.getElementById('detail-description').textContent = item.description || '—';
+    document.getElementById('detail-lore').textContent        = item.lore || 'No lore recorded.';
+    document.getElementById('detail-date').textContent        = item.createdAt ? `Discovered ${formatDate(item.createdAt)}` : '';
+
+    // Icon
+    const frame       = document.getElementById('detail-icon-frame');
+    const placeholder = document.getElementById('detail-icon-placeholder');
+    const img         = document.getElementById('detail-icon-img');
+    frame.className   = `detail-icon-frame rarity-${item.rarity}`;
+    placeholder.textContent = TYPE_ICONS[item.type] || '📦';
+
+    if (item.iconBase64) {
+      img.src = item.iconBase64;
+      img.classList.remove('hidden');
+      placeholder.classList.add('hidden');
+    } else {
+      img.classList.add('hidden');
+      placeholder.classList.remove('hidden');
+    }
+
+    // Badges
+    document.getElementById('detail-badges').innerHTML = `
+      <span class="badge badge-${item.rarity}">${cap(item.rarity)}</span>
+      <span class="badge">${TYPE_ICONS[item.type]} ${cap(item.type)}</span>`;
+
+    // Stats
+    const statsEl = document.getElementById('detail-stats');
+    const entries = [];
+    if (item.stats?.damage)     entries.push(['Damage',      item.stats.damage]);
+    if (item.stats?.armorClass) entries.push(['Armor Class', `+${item.stats.armorClass}`]);
+    if (item.stats?.effect)     entries.push(['Effect',      item.stats.effect]);
+    if (item.stats?.value)      entries.push(['Value',       `${item.stats.value} gp`]);
+    statsEl.innerHTML = entries.map(([label, val]) => `
+      <div class="detail-stat">
+        <div class="detail-stat-label">${label}</div>
+        <div class="detail-stat-value">${escapeHtml(String(val))}</div>
+      </div>`).join('');
+
+    // Holders
+    const holders  = allCharacters.filter(ch => ch.inventory?.some(inst => inst.itemId === itemId));
+    const holdersEl = document.getElementById('detail-holders');
+    if (holders.length > 0) {
+      holdersEl.classList.remove('hidden');
+      document.getElementById('detail-holders-list').innerHTML =
+        holders.map(ch => `<span class="holder-chip">🧙 ${escapeHtml(ch.name)}</span>`).join('');
+    } else {
+      holdersEl.classList.add('hidden');
+    }
+
+    document.getElementById('detail-modal').classList.remove('hidden');
+  }
+
+  function closeDetail() {
+    document.getElementById('detail-modal').classList.add('hidden');
+    activeItemId = null;
+  }
+
+  // ── Regen icon ─────────────────────────────────────────────────
+
+  async function regenDetailIcon() {
+    if (!activeItemId) return;
+    const item = getItem(activeItemId);
+    if (!item) return;
+
+    const btn = document.getElementById('detail-regen-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="regen-spinner"></span> Generating…';
+
+    try {
+      const prompt = buildIconPrompt(item);
+      const base64 = await generateIconBase64(prompt, 192);
+      item.iconBase64 = base64;
+      item.iconPrompt = prompt;
+      saveItem(item);
+      loadAll();
+      renderStats();
+      renderGrid();
+
+      // Update detail view live
+      const img = document.getElementById('detail-icon-img');
+      img.src = base64;
+      img.classList.remove('hidden');
+      document.getElementById('detail-icon-placeholder').classList.add('hidden');
+
+      showToast('Icon generated!', 'success');
+    } catch (err) {
+      showToast('Icon generation failed: ' + err.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '🎨 Regen Icon';
+    }
+  }
+
+  // ── Delete ─────────────────────────────────────────────────────
+
+  function deleteActiveItem() {
+    if (!activeItemId) return;
+    const item = getItem(activeItemId);
+    if (!item) return;
+    if (!confirm(`Delete "${item.name}"? This cannot be undone.`)) return;
+    deleteItem(activeItemId);
+    closeDetail();
+    loadAll();
+    renderStats();
+    renderGrid();
+    showToast(`${item.name} removed from the library.`, 'info');
+  }
+
+  // ── Batch icon generation ───────────────────────────────────────
+
+  async function generateMissingIcons() {
+    const missing = allItems.filter(i => !i.iconBase64);
+    if (!missing.length) { showToast('All items already have icons!', 'success'); return; }
+
+    const btn = document.getElementById('gen-all-btn');
+    btn.disabled = true;
+
+    let done = 0;
+    for (const item of missing) {
+      btn.textContent = `⏳ ${done}/${missing.length}…`;
+      try {
+        const prompt = buildIconPrompt(item);
+        const base64 = await generateIconBase64(prompt, 192);
+        const fresh  = getItem(item.id);
+        if (fresh) { fresh.iconBase64 = base64; fresh.iconPrompt = prompt; saveItem(fresh); }
+        done++;
+        showToast(`Icon generated for ${item.name} (${done}/${missing.length})`, 'success');
+      } catch (err) {
+        showToast(`Failed for ${item.name}: ${err.message}`, 'error');
+      }
+    }
+
+    loadAll();
+    renderStats();
+    renderGrid();
+    btn.disabled    = false;
+    btn.textContent = '🎨 Generate Missing Icons';
+    if (done > 0) showToast(`Generated ${done} icon${done > 1 ? 's' : ''}!`, 'success');
+  }
+
+  // ── Forge wizard ───────────────────────────────────────────────
+
+  function openForge() {
+    document.getElementById('forge-name').value   = '';
+    document.getElementById('forge-type').value   = 'weapon';
+    document.getElementById('forge-rarity').value = 'common';
+    showForgeView('form');
+    forgePending = null;
+    document.getElementById('forge-modal').classList.remove('hidden');
+    setTimeout(() => document.getElementById('forge-name').focus(), 50);
+  }
+
+  function closeForge() {
+    document.getElementById('forge-modal').classList.add('hidden');
+    forgePending = null;
+  }
+
+  function showForgeView(name) {
+    document.querySelectorAll('.forge-view').forEach(el => el.classList.remove('active'));
+    document.getElementById(`forge-${name}-view`).classList.add('active');
+  }
+
+  async function generateItemWithAI() {
+    const name   = document.getElementById('forge-name').value.trim();
+    const type   = document.getElementById('forge-type').value;
+    const rarity = document.getElementById('forge-rarity').value;
+
+    if (!name) { showToast('Please enter an item name.', 'error'); return; }
+    if (!hasGeminiKey()) { showToast('Add your Gemini API key in ⚙️ Settings first.', 'error'); return; }
+
+    const btn = document.getElementById('forge-generate-btn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Generating…';
+
+    try {
+      const aiPrompt = `Generate DND 5e item data for a ${rarity} ${type} named "${name}".
+Return ONLY valid JSON (no markdown, no explanation) with this exact structure:
+{
+  "description": "One vivid sentence describing the item's appearance",
+  "lore": "Two sentences of lore or backstory",
+  "stats": {
+    "damage": "Xd6+Y format, or null if not applicable",
+    "armorClass": <integer bonus or null>,
+    "effect": "Brief magic effect, or null",
+    "value": <gold value as integer>
+  },
+  "iconPrompt": "15-word visual description for icon generation"
+}`;
+
+      let raw = await geminiGenerate(aiPrompt, '', 0.85);
+
+      // Strip markdown fences if present
+      const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (fenceMatch) raw = fenceMatch[1];
+      const braceMatch = raw.match(/\{[\s\S]*\}/);
+      if (braceMatch) raw = braceMatch[0];
+
+      let data;
+      try { data = JSON.parse(raw.trim()); }
+      catch { throw new Error('AI returned invalid JSON — please try again.'); }
+
+      forgePending = {
+        id:          uuid(),
+        name,
+        type,
+        rarity,
+        description: data.description || '',
+        lore:        data.lore        || '',
+        stats: {
+          damage:     data.stats?.damage                            || null,
+          armorClass: data.stats?.armorClass != null ? parseInt(data.stats.armorClass) : null,
+          effect:     data.stats?.effect                            || null,
+          value:      data.stats?.value != null ? parseInt(data.stats.value) : 0,
+        },
+        iconBase64: '',
+        iconPrompt: data.iconPrompt || buildIconPrompt({ name, type, rarity }),
+        createdAt:  Date.now(),
+      };
+
+      // Populate preview
+      document.getElementById('forge-prev-name').textContent = name;
+      document.getElementById('forge-preview-placeholder').textContent = TYPE_ICONS[type] || '📦';
+      document.getElementById('forge-prev-badges').innerHTML = `
+        <span class="badge badge-${rarity}">${cap(rarity)}</span>
+        <span class="badge">${TYPE_ICONS[type]} ${cap(type)}</span>`;
+      document.getElementById('forge-desc-edit').value = forgePending.description;
+      document.getElementById('forge-lore-edit').value = forgePending.lore;
+
+      // Stats fields
+      document.getElementById('forge-stats-grid').innerHTML = `
+        <div class="form-group">
+          <label for="forge-stat-damage">Damage</label>
+          <input type="text" id="forge-stat-damage" value="${escapeHtml(forgePending.stats.damage || '')}" placeholder="e.g. 1d8+2" />
+        </div>
+        <div class="form-group">
+          <label for="forge-stat-ac">Armor Class Bonus</label>
+          <input type="number" id="forge-stat-ac" value="${forgePending.stats.armorClass ?? ''}" placeholder="e.g. 2" min="0" max="20" />
+        </div>
+        <div class="form-group">
+          <label for="forge-stat-effect">Effect</label>
+          <input type="text" id="forge-stat-effect" value="${escapeHtml(forgePending.stats.effect || '')}" placeholder="e.g. +2 to Stealth" />
+        </div>
+        <div class="form-group">
+          <label for="forge-stat-value">Value (gp)</label>
+          <input type="number" id="forge-stat-value" value="${forgePending.stats.value || 0}" min="0" />
+        </div>`;
+
+      showForgeView('preview');
+
+      // Async icon generation — don't await, show spinner
+      const spinner = document.getElementById('forge-icon-spinner');
+      spinner.classList.remove('hidden');
+      document.getElementById('forge-preview-placeholder').style.opacity = '0.15';
+
+      generateIconBase64(forgePending.iconPrompt, 192).then(base64 => {
+        forgePending.iconBase64 = base64;
+        const img = document.getElementById('forge-preview-img');
+        img.src = base64;
+        img.classList.remove('hidden');
+        document.getElementById('forge-preview-placeholder').classList.add('hidden');
+        spinner.classList.add('hidden');
+      }).catch(() => {
+        spinner.classList.add('hidden');
+        document.getElementById('forge-preview-placeholder').style.opacity = '0.35';
+        showToast('Icon failed — can regenerate after saving.', 'info');
+      });
+
+    } catch (err) {
+      showToast('Generation failed: ' + err.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '🤖 Generate with AI';
+    }
+  }
+
+  function saveForgedItem() {
+    if (!forgePending) return;
+
+    forgePending.description = document.getElementById('forge-desc-edit').value.trim() || forgePending.description;
+    forgePending.lore        = document.getElementById('forge-lore-edit').value.trim()  || forgePending.lore;
+
+    const dmg = document.getElementById('forge-stat-damage')?.value.trim();
+    const ac  = document.getElementById('forge-stat-ac')?.value;
+    const eff = document.getElementById('forge-stat-effect')?.value.trim();
+    const val = document.getElementById('forge-stat-value')?.value;
+
+    forgePending.stats = {
+      damage:     dmg || null,
+      armorClass: ac  ? parseInt(ac) : null,
+      effect:     eff || null,
+      value:      val ? parseInt(val) : 0,
+    };
+
+    saveItem(forgePending);
+    closeForge();
+    loadAll();
+    renderStats();
+    renderGrid();
+    showToast(`${forgePending.name} added to the library!`, 'success');
+  }
+
+  // ── Event wiring ───────────────────────────────────────────────
+
+  document.getElementById('create-item-btn').addEventListener('click', openForge);
+  document.getElementById('empty-create-btn').addEventListener('click', openForge);
+  document.getElementById('gen-all-btn').addEventListener('click', generateMissingIcons);
+
+  document.getElementById('detail-close').addEventListener('click', closeDetail);
+  document.getElementById('detail-modal').addEventListener('click', e => { if (e.target.id === 'detail-modal') closeDetail(); });
+  document.getElementById('detail-regen-btn').addEventListener('click', regenDetailIcon);
+  document.getElementById('detail-delete-btn').addEventListener('click', deleteActiveItem);
+
+  document.getElementById('forge-close').addEventListener('click', closeForge);
+  document.getElementById('forge-modal').addEventListener('click', e => { if (e.target.id === 'forge-modal') closeForge(); });
+  document.getElementById('forge-generate-btn').addEventListener('click', generateItemWithAI);
+  document.getElementById('forge-back-btn').addEventListener('click', () => showForgeView('form'));
+  document.getElementById('forge-save-btn').addEventListener('click', saveForgedItem);
+
+  // Keyboard open for grid cards (Enter / Space)
+  document.getElementById('il-grid').addEventListener('keydown', e => {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.classList.contains('item-card')) {
+      e.preventDefault();
+      openDetail(e.target.dataset.id);
+    }
+  });
+
+  // Filter/sort live updates
+  ['search-input', 'type-filter', 'rarity-filter', 'sort-select'].forEach(id =>
+    document.getElementById(id).addEventListener('input', renderGrid)
+  );
+
+  // ── Initialise ─────────────────────────────────────────────────
+  loadAll();
+  renderStats();
+  renderGrid();
+</script>
+
+</body>
+</html>

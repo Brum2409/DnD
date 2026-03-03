@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Create Character — DND AI</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpolygon points='16,2 30,10 30,22 16,30 2,22 2,10' fill='%230d0d0f' stroke='%23c9a84c' stroke-width='2'/%3E%3Ctext x='16' y='21' text-anchor='middle' font-size='14' fill='%23c9a84c' font-family='serif'%3E20%3C/text%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/components.css" />
+  <link rel="stylesheet" href="css/layout.css" />
+</head>
+<body>
+
+<nav class="navbar" role="navigation" aria-label="Main navigation">
+  <a href="index.html" class="navbar-brand">
+    <span class="brand-icon">⚔️</span>
+    DND AI
+  </a>
+  <ul class="navbar-nav" role="list">
+    <li><a href="index.html"            >🏠 Dashboard</a></li>
+    <li><a href="character-create.html"  class="active">✨ Create Character</a></li>
+    <li><a href="character-manager.html"             >🧙 Characters</a></li>
+    <li><a href="story-manager.html"                 >📖 Campaigns</a></li>
+    <li><a href="game.html"                          >⚔️ Play</a></li>
+  </ul>
+  <div class="navbar-actions">
+    <button class="btn btn-ghost btn-sm" id="settings-btn">⚙️ Settings</button>
+  </div>
+  <button class="hamburger" id="hamburger-btn" aria-label="Open menu">☰</button>
+</nav>
+
+<div class="nav-drawer" id="nav-drawer" aria-hidden="true">
+  <ul class="navbar-nav" role="list">
+    <li><a href="index.html"            >🏠 Dashboard</a></li>
+    <li><a href="character-create.html"  class="active">✨ Create Character</a></li>
+    <li><a href="character-manager.html"             >🧙 Characters</a></li>
+    <li><a href="story-manager.html"                 >📖 Campaigns</a></li>
+    <li><a href="game.html"                          >⚔️ Play</a></li>
+  </ul>
+</div>
+<div class="nav-drawer-overlay" id="nav-overlay"></div>
+
+<main class="page-wrapper">
+  <div class="page-container page-container-sm">
+    <div class="page-header">
+      <h1 class="page-title">✨ Forge Your Hero</h1>
+      <p class="page-subtitle">Shape a legend from the threads of fate</p>
+    </div>
+
+    <!-- Coming in Stage 2 placeholder -->
+    <div class="card" style="text-align: center; padding: 4rem 2rem;">
+      <div style="font-size: 4rem; margin-bottom: 1rem;">🛡️</div>
+      <h2 style="color: var(--color-primary); margin-bottom: 0.75rem;">Character Creator</h2>
+      <p style="color: var(--color-text-muted); max-width: 400px; margin: 0 auto 1.5rem;">
+        The character creation wizard arrives in Stage 2. Here you'll define your hero's
+        race, class, ability scores, and have an AI generate their backstory and portrait.
+      </p>
+      <a href="index.html" class="btn btn-ghost">← Back to Dashboard</a>
+    </div>
+  </div>
+</main>
+
+<div id="toast-container" aria-live="polite"></div>
+<div id="loading-overlay" class="hidden" role="status">
+  <div class="loading-rune">✦</div>
+  <div class="loading-message" id="loading-message">Loading…</div>
+</div>
+
+<script type="module">
+  // Hamburger menu
+  document.getElementById('hamburger-btn')?.addEventListener('click', () => {
+    document.getElementById('nav-drawer').classList.toggle('open');
+    document.getElementById('nav-overlay').classList.toggle('open');
+  });
+  document.getElementById('nav-overlay')?.addEventListener('click', () => {
+    document.getElementById('nav-drawer').classList.remove('open');
+    document.getElementById('nav-overlay').classList.remove('open');
+  });
+</script>
+</body>
+</html>

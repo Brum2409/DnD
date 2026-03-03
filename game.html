@@ -8,18 +8,12 @@
   <link rel="stylesheet" href="css/base.css" />
   <link rel="stylesheet" href="css/components.css" />
   <link rel="stylesheet" href="css/layout.css" />
-  <style>
-    /* Game-specific: hide default scroll on body */
-    body { overflow: hidden; }
-    @media (max-width: 640px) { body { overflow: auto; } }
-  </style>
 </head>
 <body>
 
 <nav class="navbar" role="navigation" aria-label="Main navigation">
   <a href="index.html" class="navbar-brand">
-    <span class="brand-icon">⚔️</span>
-    DND AI
+    <span class="brand-icon">⚔️</span>DND AI
   </a>
   <ul class="navbar-nav" role="list">
     <li><a href="index.html"             >🏠 Dashboard</a></li>
@@ -43,47 +37,25 @@
 </div>
 <div class="nav-drawer-overlay" id="nav-overlay"></div>
 
-<!-- Game layout -->
-<div class="page-wrapper" style="overflow: hidden;">
-  <div id="no-campaign-message" style="
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    min-height: calc(100vh - var(--nav-height));
-    text-align: center;
-    padding: 2rem;
-    gap: 1rem;
-  ">
-    <div style="font-size: 5rem; opacity: 0.3;">⚔️</div>
-    <h2 style="color: var(--color-primary); font-size: 1.5rem;">No Active Campaign</h2>
-    <p style="color: var(--color-text-muted); max-width: 420px; line-height: 1.6;">
-      The AI Dungeon Master awaits in Stage 5. First, create a campaign and characters
-      — then return here to begin your adventure.
+<main class="page-wrapper">
+  <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:calc(100vh - var(--nav-height));text-align:center;padding:2rem;gap:1rem;">
+    <div style="font-size:5rem;opacity:0.3;">⚔️</div>
+    <h2 style="color:var(--color-primary);font-size:1.5rem;">The Adventure Awaits</h2>
+    <p style="color:var(--color-text-muted);max-width:420px;line-height:1.6;">
+      The AI Dungeon Master arrives in Stage 5. First, create your characters and a campaign,
+      then return here to begin your adventure.
     </p>
-    <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; justify-content: center;">
-      <a href="story-manager.html"    class="btn btn-accent" >📖 Create Campaign</a>
-      <a href="character-create.html" class="btn btn-primary">✨ Create Character</a>
+    <div style="display:flex;gap:0.75rem;flex-wrap:wrap;justify-content:center;">
+      <a href="character-create.html" class="btn btn-primary">✨ Create a Character</a>
+      <a href="story-manager.html"    class="btn btn-accent" >📖 Create a Campaign</a>
       <a href="index.html"            class="btn btn-ghost"  >← Dashboard</a>
     </div>
   </div>
-</div>
-
-<div id="toast-container" aria-live="polite"></div>
-<div id="loading-overlay" class="hidden" role="status">
-  <div class="loading-rune">✦</div>
-  <div class="loading-message" id="loading-message">The Dungeon Master ponders…</div>
-</div>
+</main>
 
 <script type="module">
-  document.getElementById('hamburger-btn')?.addEventListener('click', () => {
-    document.getElementById('nav-drawer').classList.toggle('open');
-    document.getElementById('nav-overlay').classList.toggle('open');
-  });
-  document.getElementById('nav-overlay')?.addEventListener('click', () => {
-    document.getElementById('nav-drawer').classList.remove('open');
-    document.getElementById('nav-overlay').classList.remove('open');
-  });
+import { initCommonUI } from './js/app.js';
+initCommonUI();
 </script>
 </body>
 </html>

@@ -13,8 +13,7 @@
 
 <nav class="navbar" role="navigation" aria-label="Main navigation">
   <a href="index.html" class="navbar-brand">
-    <span class="brand-icon">⚔️</span>
-    DND AI
+    <span class="brand-icon">⚔️</span>DND AI
   </a>
   <ul class="navbar-nav" role="list">
     <li><a href="index.html"             >🏠 Dashboard</a></li>
@@ -42,45 +41,31 @@
 
 <main class="page-wrapper">
   <div class="page-container">
-    <div class="page-header" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+    <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;">
       <div>
         <h1 class="page-title">📖 Campaigns</h1>
         <p class="page-subtitle">Manage your tales and track your quests</p>
       </div>
-      <button class="btn btn-accent" id="new-campaign-btn">＋ New Campaign</button>
     </div>
 
-    <!-- Coming in Stage 4 placeholder -->
-    <div class="card" style="text-align: center; padding: 4rem 2rem;">
-      <div style="font-size: 4rem; margin-bottom: 1rem;">📖</div>
-      <h2 style="color: var(--color-primary); margin-bottom: 0.75rem;">Story Manager</h2>
-      <p style="color: var(--color-text-muted); max-width: 480px; margin: 0 auto 1.5rem;">
+    <div class="card" style="text-align:center;padding:4rem 2rem;">
+      <div style="font-size:4rem;margin-bottom:1rem;">📖</div>
+      <h2 style="color:var(--color-primary);margin-bottom:0.75rem;">Story Manager</h2>
+      <p style="color:var(--color-text-muted);max-width:480px;margin:0 auto 1.5rem;">
         The campaign manager arrives in Stage 4. Create multi-scene campaigns, assign
         characters, generate opening scenes with AI, and track your adventure history.
       </p>
-      <div style="display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap;">
-        <button class="btn btn-accent" id="new-campaign-btn-2">＋ Start a Campaign</button>
-        <a href="index.html" class="btn btn-ghost">← Dashboard</a>
+      <div style="display:flex;gap:0.75rem;justify-content:center;flex-wrap:wrap;">
+        <a href="character-create.html" class="btn btn-primary">✨ Create a Character First</a>
+        <a href="index.html"            class="btn btn-ghost">← Dashboard</a>
       </div>
     </div>
   </div>
 </main>
 
-<div id="toast-container" aria-live="polite"></div>
-<div id="loading-overlay" class="hidden" role="status">
-  <div class="loading-rune">✦</div>
-  <div class="loading-message" id="loading-message">Loading…</div>
-</div>
-
 <script type="module">
-  document.getElementById('hamburger-btn')?.addEventListener('click', () => {
-    document.getElementById('nav-drawer').classList.toggle('open');
-    document.getElementById('nav-overlay').classList.toggle('open');
-  });
-  document.getElementById('nav-overlay')?.addEventListener('click', () => {
-    document.getElementById('nav-drawer').classList.remove('open');
-    document.getElementById('nav-overlay').classList.remove('open');
-  });
+import { initCommonUI } from './js/app.js';
+initCommonUI();
 </script>
 </body>
 </html>

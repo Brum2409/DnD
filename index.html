@@ -209,143 +209,16 @@
 </div>
 
 <script type="module">
+import { initCommonUI } from './js/app.js';
 import {
   getAllCharacters, getAllItems, getAllStories, getActiveStory,
-  getStorageStats, clearIconCache, clearAllData, exportAllData, importData
 } from './js/db.js';
-import { formatDate, timeAgo, escapeHtml, showToast, truncate, getModifier, formatModifier } from './js/utils.js';
-import { getGeminiKey, setGeminiKey, testGeminiKey, hasGeminiKey } from './js/api-gemini.js';
+import { timeAgo, escapeHtml, showToast, truncate, getModifier, formatModifier } from './js/utils.js';
+import { hasGeminiKey } from './js/api-gemini.js';
 
-// ── Hamburger ─────────────────────────────────────────────────
-const hamburger   = document.getElementById('hamburger-btn');
-const navDrawer   = document.getElementById('nav-drawer');
-const navOverlay  = document.getElementById('nav-overlay');
-
-hamburger?.addEventListener('click', () => {
-  const open = navDrawer.classList.toggle('open');
-  navOverlay.classList.toggle('open', open);
-  navDrawer.setAttribute('aria-hidden', String(!open));
-});
-navOverlay?.addEventListener('click', closeDrawer);
-
-function closeDrawer() {
-  navDrawer.classList.remove('open');
-  navOverlay.classList.remove('open');
-  navDrawer.setAttribute('aria-hidden', 'true');
-}
-
-// ── Settings modal ────────────────────────────────────────────
-const settingsModal  = document.getElementById('settings-modal');
-const settingsBtn    = document.getElementById('settings-btn');
-const settingsClose  = document.getElementById('settings-close');
-const apiKeyInput    = document.getElementById('api-key-input');
-const setupKeyBtn    = document.getElementById('setup-key-btn');
-
-function openSettings() {
-  apiKeyInput.value = getGeminiKey();
-  updateStorageInfo();
-  settingsModal.classList.remove('hidden');
-  settingsModal.removeAttribute('aria-hidden');
-  apiKeyInput.focus();
-}
-
-function closeSettings() {
-  settingsModal.classList.add('hidden');
-  settingsModal.setAttribute('aria-hidden', 'true');
-}
-
-settingsBtn?.addEventListener('click', openSettings);
-setupKeyBtn?.addEventListener('click', openSettings);
-settingsClose?.addEventListener('click', closeSettings);
-settingsModal?.addEventListener('click', e => { if (e.target === settingsModal) closeSettings(); });
-
-document.getElementById('toggle-key-visibility')?.addEventListener('click', () => {
-  apiKeyInput.type = apiKeyInput.type === 'password' ? 'text' : 'password';
-});
-
-document.getElementById('save-key-btn')?.addEventListener('click', () => {
-  const key = apiKeyInput.value.trim();
-  if (!key) { showToast('Please enter an API key.', 'error'); return; }
-  setGeminiKey(key);
-  showToast('API key saved!', 'success');
-  renderSetupBanner();
-  document.getElementById('key-status').innerHTML = '<span style="color: var(--color-success)">✓ Key saved</span>';
-});
-
-document.getElementById('test-key-btn')?.addEventListener('click', async () => {
-  const key = apiKeyInput.value.trim();
-  if (!key) { showToast('Enter a key first.', 'error'); return; }
-  // Temporarily set the key to test it
-  const prev = getGeminiKey();
-  setGeminiKey(key);
-
-  const statusEl = document.getElementById('key-status');
-  statusEl.innerHTML = '<span style="color: var(--color-text-muted)">Testing…</span>';
-
-  const ok = await testGeminiKey();
-  if (ok) {
-    statusEl.innerHTML = '<span style="color: var(--color-success)">✓ Key is valid and working!</span>';
-    showToast('API key works!', 'success');
-  } else {
-    setGeminiKey(prev); // restore
-    statusEl.innerHTML = '<span style="color: var(--color-danger)">✕ Key test failed. Check your key and try again.</span>';
-    showToast('API key test failed.', 'error');
-  }
-});
-
-// ── Data management ───────────────────────────────────────────
-function updateStorageInfo() {
-  const stats = getStorageStats();
-  const fmt   = n => n < 1024 ? `${n}B` : n < 1048576 ? `${(n/1024).toFixed(1)}KB` : `${(n/1048576).toFixed(2)}MB`;
-  document.getElementById('storage-info').textContent =
-    `Storage used: ${fmt(stats.total)} (Characters: ${fmt(stats.characters)}, Items: ${fmt(stats.items)}, Stories: ${fmt(stats.stories)})`;
-}
-
-document.getElementById('export-btn')?.addEventListener('click', () => {
-  const data     = exportAllData();
-  const blob     = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-  const url      = URL.createObjectURL(blob);
-  const link     = document.createElement('a');
-  link.href      = url;
-  link.download  = `dnd-ai-export-${new Date().toISOString().slice(0,10)}.json`;
-  link.click();
-  URL.revokeObjectURL(url);
-  showToast('Data exported!', 'success');
-});
-
-document.getElementById('import-btn')?.addEventListener('click', () => {
-  document.getElementById('import-file').click();
-});
-
-document.getElementById('import-file')?.addEventListener('change', async e => {
-  const file = e.target.files[0];
-  if (!file) return;
-  try {
-    const text = await file.text();
-    const data = JSON.parse(text);
-    importData(data);
-    showToast('Data imported successfully!', 'success');
-    renderDashboard();
-    updateStorageInfo();
-  } catch (err) {
-    showToast('Import failed: ' + err.message, 'error');
-  }
-  e.target.value = '';
-});
-
-document.getElementById('clear-icons-btn')?.addEventListener('click', () => {
-  if (!confirm('This will remove all cached item icons. They can be regenerated. Continue?')) return;
-  clearIconCache();
-  showToast('Icon cache cleared.', 'success');
-  updateStorageInfo();
-});
-
-document.getElementById('clear-all-btn')?.addEventListener('click', () => {
-  if (!confirm('⚠️ This will permanently delete ALL characters, items, and campaigns. This cannot be undone.\n\nAre you absolutely sure?')) return;
-  clearAllData();
-  showToast('All data cleared.', 'info');
-  renderDashboard();
-  updateStorageInfo();
+// Also wire the dashboard's own "Add API Key" banner button to open settings
+document.getElementById('setup-key-btn')?.addEventListener('click', () => {
+  document.getElementById('settings-btn')?.click();
 });
 
 // ── Dashboard rendering ───────────────────────────────────────

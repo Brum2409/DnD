@@ -13,8 +13,7 @@
 
 <nav class="navbar" role="navigation" aria-label="Main navigation">
   <a href="index.html" class="navbar-brand">
-    <span class="brand-icon">⚔️</span>
-    DND AI
+    <span class="brand-icon">⚔️</span>DND AI
   </a>
   <ul class="navbar-nav" role="list">
     <li><a href="index.html"             >🏠 Dashboard</a></li>
@@ -42,45 +41,91 @@
 
 <main class="page-wrapper">
   <div class="page-container">
-    <div class="page-header" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+    <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;">
       <div>
-        <h1 class="page-title">🧙 Your Characters</h1>
+        <h1 class="page-title">🧙 Characters</h1>
         <p class="page-subtitle">Manage your heroes and their inventories</p>
       </div>
       <a href="character-create.html" class="btn btn-primary">✨ New Character</a>
     </div>
 
-    <!-- Coming in Stage 3 placeholder -->
-    <div class="card" style="text-align: center; padding: 4rem 2rem;">
-      <div style="font-size: 4rem; margin-bottom: 1rem;">🧙</div>
-      <h2 style="color: var(--color-primary); margin-bottom: 0.75rem;">Character Manager</h2>
-      <p style="color: var(--color-text-muted); max-width: 480px; margin: 0 auto 1.5rem;">
-        The full character manager arrives in Stage 3. You'll be able to view stats, manage
-        inventory, track conditions, and review adventure logs — all from this split-panel view.
-      </p>
-      <div style="display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap;">
-        <a href="character-create.html" class="btn btn-primary">✨ Create First Character</a>
-        <a href="index.html" class="btn btn-ghost">← Dashboard</a>
-      </div>
-    </div>
+    <div id="characters-panel"></div>
   </div>
 </main>
 
-<div id="toast-container" aria-live="polite"></div>
-<div id="loading-overlay" class="hidden" role="status">
-  <div class="loading-rune">✦</div>
-  <div class="loading-message" id="loading-message">Loading…</div>
-</div>
-
 <script type="module">
-  document.getElementById('hamburger-btn')?.addEventListener('click', () => {
-    document.getElementById('nav-drawer').classList.toggle('open');
-    document.getElementById('nav-overlay').classList.toggle('open');
+import { initCommonUI } from './js/app.js';
+import { getAllCharacters, deleteCharacter } from './js/db.js';
+import { escapeHtml, showToast, formatModifier, getModifier, timeAgo } from './js/utils.js';
+
+initCommonUI();
+
+function render() {
+  const chars  = getAllCharacters();
+  const panel  = document.getElementById('characters-panel');
+
+  if (chars.length === 0) {
+    panel.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">🧙</div>
+        <div class="empty-state-title">No Characters Yet</div>
+        <div class="empty-state-text">
+          Every legend begins with a hero. Forge your first character and let the story begin.
+        </div>
+        <a href="character-create.html" class="btn btn-primary" style="margin-top:0.5rem;">✨ Create Character</a>
+      </div>`;
+    return;
+  }
+
+  panel.innerHTML = `<div class="character-grid">` + chars.map(char => {
+    const hpPct   = Math.round((char.stats.hp / char.stats.maxHp) * 100);
+    const hpClass = hpPct > 60 ? 'high' : hpPct > 25 ? 'mid' : 'low';
+    const portrait = char.portrait
+      ? `<img src="${escapeHtml(char.portrait)}" alt="${escapeHtml(char.name)}" style="width:100%;height:100%;object-fit:cover;" loading="lazy" />`
+      : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:2.5rem;background:var(--color-surface-2);">🧙</div>`;
+
+    return `
+      <div class="card" style="padding:0;overflow:hidden;display:flex;flex-direction:column;">
+        <div style="height:120px;overflow:hidden;position:relative;background:var(--color-surface-2);">
+          ${portrait}
+          <button class="btn btn-danger btn-sm" data-del="${escapeHtml(char.id)}"
+            style="position:absolute;top:0.4rem;right:0.4rem;padding:0.25em 0.55em;font-size:0.72rem;opacity:0.85;"
+            title="Delete character">🗑</button>
+        </div>
+        <div style="padding:0.9rem;flex:1;display:flex;flex-direction:column;gap:0.4rem;">
+          <div style="font-family:var(--font-display);font-size:0.95rem;">${escapeHtml(char.name)}</div>
+          <div style="font-family:var(--font-ui);font-size:0.72rem;color:var(--color-text-muted);">
+            ${escapeHtml(char.race)} ${escapeHtml(char.class)} · Lv ${char.level}
+          </div>
+          <div class="hp-display">
+            <div class="progress-bar" style="flex:1;">
+              <div class="progress-bar-fill ${hpClass}" style="width:${hpPct}%"></div>
+            </div>
+            <span class="hp-numbers">${char.stats.hp}/${char.stats.maxHp} HP</span>
+          </div>
+          ${char.conditions?.length ? `<div style="font-size:0.7rem;color:var(--color-danger);">⚠️ ${char.conditions.slice(0,2).join(', ')}</div>` : ''}
+          <div style="font-family:var(--font-ui);font-size:0.72rem;color:var(--color-text-faint);margin-top:auto;padding-top:0.3rem;">
+            💰 ${char.gold ?? 0} gp · ${timeAgo(char.updatedAt)}
+          </div>
+        </div>
+      </div>`;
+  }).join('') + `</div>`;
+
+  // Delete buttons
+  panel.querySelectorAll('[data-del]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const id   = btn.dataset.del;
+      const char = getAllCharacters().find(c => c.id === id);
+      if (!confirm(`Delete ${char?.name ?? 'this character'}? This cannot be undone.`)) return;
+      deleteCharacter(id);
+      showToast('Character deleted.', 'info');
+      render();
+    });
   });
-  document.getElementById('nav-overlay')?.addEventListener('click', () => {
-    document.getElementById('nav-drawer').classList.remove('open');
-    document.getElementById('nav-overlay').classList.remove('open');
-  });
+}
+
+render();
 </script>
 </body>
 </html>

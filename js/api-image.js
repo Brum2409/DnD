@@ -29,7 +29,7 @@ const POLLINATIONS_BASE = 'https://image.pollinations.ai/prompt';
 export async function generateImage(prompt, width = 512, height = 512, seed = null) {
   const encoded = encodeURIComponent(prompt);
   const s       = seed ?? Date.now();
-  const url     = `${POLLINATIONS_BASE}/${encoded}?width=${width}&height=${height}&nologo=true&seed=${s}`;
+  const url     = `${POLLINATIONS_BASE}/${encoded}?width=${width}&height=${height}&seed=${s}&model=flux`;
   return url;
 }
 

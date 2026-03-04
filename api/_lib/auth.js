@@ -8,12 +8,15 @@
 
 import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = process.env.JWT_SECRET;
 const COOKIE_NAME = 'token';
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 7; // 7 days in seconds
 
-if (!JWT_SECRET) {
-  throw new Error('[auth] JWT_SECRET environment variable is not set. Set it in your Vercel project settings.');
+function getJwtSecret() {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error('[auth] JWT_SECRET environment variable is not set. Set it in your Vercel project settings.');
+  }
+  return secret;
 }
 
 /**
@@ -48,7 +51,7 @@ export function verifyAuth(req) {
   }
 
   try {
-    const payload = jwt.verify(token, JWT_SECRET);
+    const payload = jwt.verify(token, getJwtSecret());
     return payload.userId;
   } catch {
     const err = new Error('Unauthorized: invalid token');
@@ -63,7 +66,7 @@ export function verifyAuth(req) {
  * @returns {string} Set-Cookie header value
  */
 export function signToken(userId) {
-  return jwt.sign({ userId }, JWT_SECRET, { expiresIn: '7d' });
+  return jwt.sign({ userId }, getJwtSecret(), { expiresIn: '7d' });
 }
 
 /**
@@ -78,8 +81,8 @@ export function setAuthCookie(userId) {
     `Max-Age=${COOKIE_MAX_AGE}`,
     'Path=/',
     'HttpOnly',
+    'Secure',
     'SameSite=Lax',
-    // 'Secure', // uncomment if you want HTTPS-only (Vercel always uses HTTPS)
   ];
   return flags.join('; ');
 }

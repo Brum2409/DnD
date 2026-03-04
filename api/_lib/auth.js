@@ -13,7 +13,7 @@ const COOKIE_NAME = 'token';
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 7; // 7 days in seconds
 
 if (!JWT_SECRET) {
-  console.warn('[auth] JWT_SECRET environment variable is not set!');
+  throw new Error('[auth] JWT_SECRET environment variable is not set. Set it in your Vercel project settings.');
 }
 
 /**

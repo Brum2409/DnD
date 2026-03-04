@@ -537,7 +537,7 @@
         <textarea
           class="chat-textarea"
           id="player-input"
-          placeholder="Describe your action… (Enter to send, Shift+Enter for new line)"
+          placeholder="Describe your action… (Enter to send, Shift+Enter for new line) | /list for party status"
           rows="2"
           aria-label="Player action input"
         ></textarea>
@@ -803,6 +803,32 @@ async function sendOpeningNarration() {
   await handleSend('(Begin the adventure. Set the scene dramatically and welcome the players to the opening scene. Describe the environment and give the players something to react to.)');
 }
 
+function handleListCommand() {
+  if (!activeStory) return;
+  const chars = activeStory.characterIds.map(id => getCharacter(id)).filter(Boolean);
+
+  let lines = ['📋 **Party Status**\n'];
+  if (!chars.length) {
+    lines.push('No characters in this campaign.');
+  } else {
+    chars.forEach(ch => {
+      const hpPct = ch.stats.maxHp > 0 ? Math.round((ch.stats.hp / ch.stats.maxHp) * 100) : 0;
+      const hpBar = '█'.repeat(Math.round(hpPct / 10)) + '░'.repeat(10 - Math.round(hpPct / 10));
+      const conditions = ch.conditions.length ? ` | ${ch.conditions.join(', ')}` : '';
+      lines.push(
+        `**${ch.name}** — Lvl ${ch.level} ${ch.race} ${ch.class}\n` +
+        `HP: ${ch.stats.hp}/${ch.stats.maxHp} [${hpBar}] ${hpPct}% | AC: ${ch.stats.ac} | 💰 ${ch.gold} gp${conditions}`
+      );
+    });
+  }
+
+  const scene = activeStory.scenes[activeStory.currentSceneIndex];
+  if (scene) lines.push(`\n📍 **Current Scene:** ${scene.title}`);
+
+  appendMessageEl('assistant', lines.join('\n'));
+  scrollChatBottom();
+}
+
 async function handleSend(overrideMessage) {
   if (dmTyping || !activeStory) return;
 
@@ -811,6 +837,12 @@ async function handleSend(overrideMessage) {
   if (!message) return;
 
   if (!overrideMessage) input.value = '';
+
+  // Handle /list command locally without sending to AI
+  if (!overrideMessage && /^\/list$/i.test(message)) {
+    handleListCommand();
+    return;
+  }
 
   // Show player message in chat (only if it's a real player action)
   if (!overrideMessage) {

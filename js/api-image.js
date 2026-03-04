@@ -16,8 +16,7 @@ import { getGeminiKey } from './api-gemini.js';
 
 const POLLINATIONS_BASE     = 'https://image.pollinations.ai/prompt';
 const GEMINI_IMAGE_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
-const HF_INFERENCE_BASE     = 'https://router.huggingface.co/models';
-const CORS_PROXY            = 'https://corsproxy.io/?url=';
+const HF_INFERENCE_BASE     = 'https://api-inference.huggingface.co/models';
 
 // ── HuggingFace key storage ───────────────────────────────────
 
@@ -148,7 +147,7 @@ async function _generateHFImage(prompt, width, height, modelId) {
     'hf-sdxl':         'stabilityai/stable-diffusion-xl-base-1.0',
   };
   const hfModel = HF_MODEL_MAP[modelId] || modelId;
-  const url     = `${CORS_PROXY}${encodeURIComponent(`${HF_INFERENCE_BASE}/${hfModel}`)}`;
+  const url     = `${HF_INFERENCE_BASE}/${hfModel}`;
 
   const response = await fetch(url, {
     method:  'POST',
@@ -156,7 +155,10 @@ async function _generateHFImage(prompt, width, height, modelId) {
       'Authorization': `Bearer ${key}`,
       'Content-Type':  'application/json',
     },
-    body: JSON.stringify({ inputs: prompt }),
+    body: JSON.stringify({
+      inputs:     prompt,
+      parameters: { width, height },
+    }),
   });
 
   if (!response.ok) {

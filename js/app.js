@@ -10,7 +10,7 @@
  */
 
 import { getGeminiKey, setGeminiKey, testGeminiKey, getGeminiModel, setGeminiModel, GEMINI_MODELS } from './api-gemini.js';
-import { IMAGE_MODELS, getImageModel, setImageModel } from './api-image.js';
+import { IMAGE_MODELS, getImageModel, setImageModel, getHFKey, setHFKey } from './api-image.js';
 import {
   getStorageStats, clearIconCache, clearAllData,
   exportAllData, importData,
@@ -145,10 +145,29 @@ function injectSettingsModal() {
             <label for="image-model-select">Image Provider</label>
             <select id="image-model-select" style="width:100%;background:var(--color-surface-2);border:1px solid var(--color-border);border-radius:var(--radius);color:var(--color-text);font-family:var(--font-ui);font-size:0.88rem;padding:0.55rem 0.75rem;cursor:pointer;">
             </select>
-            <div class="form-hint">Pollinations is free with no key. Google Imagen requires the Gemini API key above.</div>
+            <div class="form-hint">Pollinations is free with no key. HuggingFace models require a free HF API key. Google Imagen requires the Gemini API key above.</div>
           </div>
           <button class="btn btn-primary btn-sm" id="save-image-model-btn">💾 Save Image Model</button>
           <div id="image-model-status" style="margin-top:0.75rem;font-family:var(--font-ui);font-size:0.8rem;"></div>
+
+          <!-- HuggingFace API key (shown only for HF models) -->
+          <div id="hf-key-section" style="margin-top:1.25rem;">
+            <div class="form-group">
+              <label for="hf-key-input">HuggingFace API Key</label>
+              <div style="display:flex;gap:0.5rem;">
+                <input type="password" id="hf-key-input" placeholder="hf_…" autocomplete="off" style="flex:1;" />
+                <button class="btn btn-ghost btn-sm" id="toggle-hf-key-visibility"
+                        aria-label="Toggle HF key visibility" style="flex-shrink:0;">👁</button>
+              </div>
+              <div class="form-hint">
+                Get a free token at
+                <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noopener">huggingface.co/settings/tokens</a>
+                (free account, no credit card). Stored only in your browser.
+              </div>
+            </div>
+            <button class="btn btn-primary btn-sm" id="save-hf-key-btn">💾 Save HF Key</button>
+            <div id="hf-key-status" style="margin-top:0.75rem;font-family:var(--font-ui);font-size:0.8rem;"></div>
+          </div>
         </div>
 
         <hr class="divider" />
@@ -176,7 +195,8 @@ function injectSettingsModal() {
           <strong style="color:var(--color-text-muted);">APIs used:</strong><br/>
           🤖 <a href="https://ai.google.dev" target="_blank" rel="noopener">Google Gemini Flash</a> — AI text generation<br/>
           🎨 <a href="https://pollinations.ai" target="_blank" rel="noopener">Pollinations.ai</a> — Image generation (no key needed)<br/>
-          🖼️ <a href="https://ai.google.dev" target="_blank" rel="noopener">Google Imagen 3</a> — Higher quality images (key required)
+          🖼️ <a href="https://huggingface.co" target="_blank" rel="noopener">HuggingFace</a> — FLUX.1-schnell / SDXL (free HF key)<br/>
+          🖼️ <a href="https://ai.google.dev" target="_blank" rel="noopener">Google Imagen 4</a> — Higher quality images (Gemini key required)
         </div>
 
       </div>
@@ -217,8 +237,11 @@ function initSettingsModal() {
     });
   }
 
+  const hfKeyInput = document.getElementById('hf-key-input');
+
   const open = () => {
-    if (apiInput) apiInput.value = getGeminiKey();
+    if (apiInput)   apiInput.value   = getGeminiKey();
+    if (hfKeyInput) hfKeyInput.value = getHFKey();
     // Sync model selectors to current values
     if (modelSelect)      modelSelect.value      = getGeminiModel();
     if (imageModelSelect) imageModelSelect.value = getImageModel();
@@ -273,13 +296,32 @@ function initSettingsModal() {
     showToast('Model saved!', 'success');
   });
 
+  document.getElementById('toggle-hf-key-visibility')?.addEventListener('click', () => {
+    if (hfKeyInput) hfKeyInput.type = hfKeyInput.type === 'password' ? 'text' : 'password';
+  });
+
+  document.getElementById('save-hf-key-btn')?.addEventListener('click', () => {
+    const key = hfKeyInput?.value.trim();
+    if (!key) { showToast('Please enter a HuggingFace API key.', 'error'); return; }
+    setHFKey(key);
+    showToast('HF API key saved!', 'success');
+    const status = document.getElementById('hf-key-status');
+    if (status) status.innerHTML = '<span style="color:var(--color-success)">✓ HF key saved</span>';
+  });
+
   document.getElementById('save-image-model-btn')?.addEventListener('click', () => {
     const selected = imageModelSelect?.value;
     if (!selected) { showToast('Select an image model first.', 'error'); return; }
     const modelDef = IMAGE_MODELS.find(m => m.id === selected);
-    if (modelDef?.requiresKey && !getGeminiKey()) {
-      showToast('This model requires a Gemini API key — save one above first.', 'error');
-      return;
+    if (modelDef?.requiresKey) {
+      if (modelDef.keyType === 'hf' && !getHFKey()) {
+        showToast('This model requires a HuggingFace API key — save one below first.', 'error');
+        return;
+      }
+      if (modelDef.keyType === 'gemini' && !getGeminiKey()) {
+        showToast('This model requires a Gemini API key — save one above first.', 'error');
+        return;
+      }
     }
     setImageModel(selected);
     const status = document.getElementById('image-model-status');

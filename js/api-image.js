@@ -14,16 +14,24 @@
 
 import { getGeminiKey } from './api-gemini.js';
 
-const POLLINATIONS_BASE    = 'https://image.pollinations.ai/prompt';
+const POLLINATIONS_BASE     = 'https://image.pollinations.ai/prompt';
 const GEMINI_IMAGE_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
+const HF_INFERENCE_BASE     = 'https://api-inference.huggingface.co/models';
+
+// ── HuggingFace key storage ───────────────────────────────────
+
+export function getHFKey()      { return localStorage.getItem('hf_api_key') || ''; }
+export function setHFKey(key)   { localStorage.setItem('hf_api_key', key); }
 
 // ── Model registry ─────────────────────────────────────────────
 
 export const IMAGE_MODELS = [
-  { id: 'pollinations',                  label: 'Pollinations.ai / Flux (Free — No Key Required)', requiresKey: false },
-  { id: 'imagen-4.0-generate-001',       label: 'Google Imagen 4 (Requires API Key)',               requiresKey: true  },
-  { id: 'imagen-4.0-fast-generate-001',  label: 'Google Imagen 4 Fast (Requires API Key)',          requiresKey: true  },
-  { id: 'imagen-4.0-ultra-generate-001', label: 'Google Imagen 4 Ultra (Requires API Key)',         requiresKey: true  },
+  { id: 'pollinations',                  label: 'Pollinations.ai / Flux (Free — No Key Required)',       requiresKey: false              },
+  { id: 'hf-flux-schnell',               label: 'HuggingFace FLUX.1-schnell (Free HF API Key)',          requiresKey: true, keyType: 'hf' },
+  { id: 'hf-sdxl',                       label: 'HuggingFace Stable Diffusion XL (Free HF API Key)',     requiresKey: true, keyType: 'hf' },
+  { id: 'imagen-4.0-generate-001',       label: 'Google Imagen 4 (Requires Gemini API Key)',              requiresKey: true, keyType: 'gemini' },
+  { id: 'imagen-4.0-fast-generate-001',  label: 'Google Imagen 4 Fast (Requires Gemini API Key)',        requiresKey: true, keyType: 'gemini' },
+  { id: 'imagen-4.0-ultra-generate-001', label: 'Google Imagen 4 Ultra (Requires Gemini API Key)',       requiresKey: true, keyType: 'gemini' },
 ];
 
 const DEFAULT_IMAGE_MODEL = 'pollinations';
@@ -62,6 +70,10 @@ export async function generateImage(prompt, width = 512, height = 512, seed = nu
     const encoded = encodeURIComponent(prompt);
     const s       = seed ?? Date.now();
     return `${POLLINATIONS_BASE}/${encoded}?width=${width}&height=${height}&seed=${s}&model=flux`;
+  }
+
+  if (model.startsWith('hf-')) {
+    return _generateHFImage(prompt, width, height, model);
   }
 
   return _generateImagenImage(prompt, width, height, model);
@@ -111,6 +123,48 @@ async function _generateImagenImage(prompt, width, height, modelId) {
   if (!b64) throw new Error('No image data returned from Google Imagen.');
 
   return `data:${mime};base64,${b64}`;
+}
+
+/**
+ * Call the HuggingFace Inference API (free tier with HF access token).
+ *
+ * Supported model IDs:
+ *   hf-flux-schnell → black-forest-labs/FLUX.1-schnell
+ *   hf-sdxl         → stabilityai/stable-diffusion-xl-base-1.0
+ *
+ * @param {string} prompt
+ * @param {number} width
+ * @param {number} height
+ * @param {string} modelId  internal model id (e.g. 'hf-flux-schnell')
+ * @returns {Promise<string>}  base64 data URL
+ */
+async function _generateHFImage(prompt, width, height, modelId) {
+  const key = getHFKey();
+  if (!key) throw new Error('A HuggingFace API key is required. Get one free at huggingface.co/settings/tokens.');
+
+  const HF_MODEL_MAP = {
+    'hf-flux-schnell': 'black-forest-labs/FLUX.1-schnell',
+    'hf-sdxl':         'stabilityai/stable-diffusion-xl-base-1.0',
+  };
+  const hfModel = HF_MODEL_MAP[modelId] || modelId;
+  const url     = `${HF_INFERENCE_BASE}/${hfModel}`;
+
+  const response = await fetch(url, {
+    method:  'POST',
+    headers: {
+      'Authorization': `Bearer ${key}`,
+      'Content-Type':  'application/json',
+    },
+    body: JSON.stringify({ inputs: prompt }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(`HuggingFace API error: ${err.error || `HTTP ${response.status}`}`);
+  }
+
+  const blob = await response.blob();
+  return blobToBase64(blob);
 }
 
 // ── Icon generation ───────────────────────────────────────────

@@ -3,7 +3,7 @@
  *
  * Providers:
  *   - Pollinations.ai (free, no API key required) — default
- *   - Google Imagen 3 / Imagen 3 Fast (requires Gemini API key)
+ *   - Google Imagen 4 / Imagen 4 Fast / Imagen 4 Ultra (requires Gemini API key)
  *
  * Usage:
  *   import { generateImage, generateIconBase64, buildIconPrompt } from './api-image.js';
@@ -14,21 +14,26 @@
 
 import { getGeminiKey } from './api-gemini.js';
 
-const POLLINATIONS_BASE    = 'https://gen.pollinations.ai/image';
+const POLLINATIONS_BASE    = 'https://image.pollinations.ai/prompt';
 const GEMINI_IMAGE_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 // ── Model registry ─────────────────────────────────────────────
 
 export const IMAGE_MODELS = [
-  { id: 'pollinations',                 label: 'Pollinations.ai / Flux (Free — No Key Required)', requiresKey: false },
-  { id: 'imagen-3.0-generate-002',      label: 'Google Imagen 3 (Requires API Key)',               requiresKey: true  },
-  { id: 'imagen-3.0-fast-generate-001', label: 'Google Imagen 3 Fast (Requires API Key)',          requiresKey: true  },
+  { id: 'pollinations',                  label: 'Pollinations.ai / Flux (Free — No Key Required)', requiresKey: false },
+  { id: 'imagen-4.0-generate-001',       label: 'Google Imagen 4 (Requires API Key)',               requiresKey: true  },
+  { id: 'imagen-4.0-fast-generate-001',  label: 'Google Imagen 4 Fast (Requires API Key)',          requiresKey: true  },
+  { id: 'imagen-4.0-ultra-generate-001', label: 'Google Imagen 4 Ultra (Requires API Key)',         requiresKey: true  },
 ];
 
 const DEFAULT_IMAGE_MODEL = 'pollinations';
 
 export function getImageModel() {
-  return localStorage.getItem('image_model') || DEFAULT_IMAGE_MODEL;
+  const stored = localStorage.getItem('image_model');
+  // Migrate deprecated Imagen 3 model IDs to Imagen 4 equivalents
+  if (stored === 'imagen-3.0-generate-002')      return 'imagen-4.0-generate-001';
+  if (stored === 'imagen-3.0-fast-generate-001') return 'imagen-4.0-fast-generate-001';
+  return stored || DEFAULT_IMAGE_MODEL;
 }
 
 export function setImageModel(modelId) {

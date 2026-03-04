@@ -74,8 +74,8 @@ function initUserDisplay() {
       if (confirm('Sign out of DND AI?')) logout();
     });
 
-    actionsEl.insertBefore(logoutBtn, actionsEl.firstChild);
-    actionsEl.insertBefore(userSpan, actionsEl.firstChild);
+    actionsEl.appendChild(userSpan);
+    actionsEl.appendChild(logoutBtn);
   }
 }
 

@@ -145,62 +145,6 @@
   </div>
 </main>
 
-<!-- ── Settings / API Key modal ── -->
-<div class="modal-overlay hidden" id="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-  <div class="modal">
-    <div class="modal-header">
-      <span class="modal-title" id="settings-title">⚙️ Settings</span>
-      <button class="modal-close" id="settings-close" aria-label="Close settings">✕</button>
-    </div>
-    <div class="modal-body">
-
-      <!-- API Key section -->
-      <div style="margin-bottom: 1.5rem;">
-        <h3 style="font-size: 0.95rem; color: var(--color-primary); margin-bottom: 1rem; font-family: var(--font-display);">🔑 Gemini API Key</h3>
-        <div class="form-group">
-          <label for="api-key-input">API Key</label>
-          <div style="display: flex; gap: 0.5rem;">
-            <input type="password" id="api-key-input" placeholder="AIza…" autocomplete="off" />
-            <button class="btn btn-ghost btn-sm" id="toggle-key-visibility" aria-label="Toggle key visibility" style="flex-shrink: 0;">👁</button>
-          </div>
-          <div class="form-hint">Get a free key at <a href="https://ai.google.dev" target="_blank" rel="noopener">ai.google.dev</a>. Stored only in your browser.</div>
-        </div>
-        <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
-          <button class="btn btn-primary btn-sm" id="save-key-btn">💾 Save Key</button>
-          <button class="btn btn-ghost btn-sm"   id="test-key-btn">🧪 Test Key</button>
-        </div>
-        <div id="key-status" style="margin-top: 0.75rem; font-family: var(--font-ui); font-size: 0.8rem;"></div>
-      </div>
-
-      <hr class="divider" />
-
-      <!-- Data management -->
-      <div>
-        <h3 style="font-size: 0.95rem; color: var(--color-primary); margin-bottom: 1rem; font-family: var(--font-display);">💾 Data Management</h3>
-        <div id="storage-info" style="font-family: var(--font-ui); font-size: 0.8rem; color: var(--color-text-muted); margin-bottom: 1rem;"></div>
-        <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
-          <button class="btn btn-ghost btn-sm" id="export-btn">📤 Export Data</button>
-          <button class="btn btn-ghost btn-sm" id="import-btn">📥 Import Data</button>
-          <input type="file" id="import-file" accept=".json" class="hidden" />
-          <button class="btn btn-ghost btn-sm" id="clear-icons-btn">🖼️ Clear Icon Cache</button>
-          <button class="btn btn-danger btn-sm" id="clear-all-btn">🗑️ Clear All Data</button>
-        </div>
-      </div>
-
-      <hr class="divider" />
-
-      <!-- Credits -->
-      <div style="font-family: var(--font-ui); font-size: 0.8rem; color: var(--color-text-faint); line-height: 1.8;">
-        <strong style="color: var(--color-text-muted);">Free APIs used:</strong><br />
-        🤖 <a href="https://ai.google.dev" target="_blank" rel="noopener">Google Gemini Flash</a> — AI text generation<br />
-        🎨 <a href="https://pollinations.ai" target="_blank" rel="noopener">Pollinations.ai</a> — Image generation (no key needed)<br /><br />
-        <strong style="color: var(--color-text-muted);">Tech stack:</strong> Vanilla JS ES Modules · CSS Custom Properties · LocalStorage
-      </div>
-
-    </div>
-  </div>
-</div>
-
 <!-- ── Toast container ── -->
 <div id="toast-container" aria-live="polite"></div>
 

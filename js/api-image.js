@@ -16,7 +16,7 @@ import { getGeminiKey } from './api-gemini.js';
 
 const POLLINATIONS_BASE     = 'https://image.pollinations.ai/prompt';
 const GEMINI_IMAGE_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
-const HF_INFERENCE_BASE     = 'https://api-inference.huggingface.co/models';
+const HF_INFERENCE_BASE     = 'https://router.huggingface.co/hf-inference/models';
 
 // ── HuggingFace key storage ───────────────────────────────────
 

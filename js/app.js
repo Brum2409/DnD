@@ -10,6 +10,7 @@
  */
 
 import { getGeminiKey, setGeminiKey, testGeminiKey, getGeminiModel, setGeminiModel, GEMINI_MODELS } from './api-gemini.js';
+import { IMAGE_MODELS, getImageModel, setImageModel } from './api-image.js';
 import {
   getStorageStats, clearIconCache, clearAllData,
   exportAllData, importData,
@@ -135,6 +136,23 @@ function injectSettingsModal() {
 
         <hr class="divider" />
 
+        <!-- Image model selection -->
+        <div style="margin-bottom:1.5rem;">
+          <h3 style="font-size:0.95rem;color:var(--color-primary);margin-bottom:1rem;font-family:var(--font-display);">
+            🎨 Image Model
+          </h3>
+          <div class="form-group">
+            <label for="image-model-select">Image Provider</label>
+            <select id="image-model-select" style="width:100%;background:var(--color-surface-2);border:1px solid var(--color-border);border-radius:var(--radius);color:var(--color-text);font-family:var(--font-ui);font-size:0.88rem;padding:0.55rem 0.75rem;cursor:pointer;">
+            </select>
+            <div class="form-hint">Pollinations is free with no key. Google Imagen requires the Gemini API key above.</div>
+          </div>
+          <button class="btn btn-primary btn-sm" id="save-image-model-btn">💾 Save Image Model</button>
+          <div id="image-model-status" style="margin-top:0.75rem;font-family:var(--font-ui);font-size:0.8rem;"></div>
+        </div>
+
+        <hr class="divider" />
+
         <!-- Data management -->
         <div>
           <h3 style="font-size:0.95rem;color:var(--color-primary);margin-bottom:1rem;font-family:var(--font-display);">
@@ -155,9 +173,10 @@ function injectSettingsModal() {
 
         <!-- Credits -->
         <div style="font-family:var(--font-ui);font-size:0.8rem;color:var(--color-text-faint);line-height:1.8;">
-          <strong style="color:var(--color-text-muted);">Free APIs used:</strong><br/>
+          <strong style="color:var(--color-text-muted);">APIs used:</strong><br/>
           🤖 <a href="https://ai.google.dev" target="_blank" rel="noopener">Google Gemini Flash</a> — AI text generation<br/>
-          🎨 <a href="https://pollinations.ai" target="_blank" rel="noopener">Pollinations.ai</a> — Image generation (no key needed)
+          🎨 <a href="https://pollinations.ai" target="_blank" rel="noopener">Pollinations.ai</a> — Image generation (no key needed)<br/>
+          🖼️ <a href="https://ai.google.dev" target="_blank" rel="noopener">Google Imagen 3</a> — Higher quality images (key required)
         </div>
 
       </div>
@@ -172,7 +191,7 @@ function initSettingsModal() {
   const apiInput   = document.getElementById('api-key-input');
   if (!modal) return;
 
-  // Populate model dropdown
+  // Populate Gemini model dropdown
   const modelSelect = document.getElementById('model-select');
   if (modelSelect) {
     const currentModel = getGeminiModel();
@@ -185,10 +204,24 @@ function initSettingsModal() {
     });
   }
 
+  // Populate image model dropdown
+  const imageModelSelect = document.getElementById('image-model-select');
+  if (imageModelSelect) {
+    const currentImageModel = getImageModel();
+    IMAGE_MODELS.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m.id;
+      opt.textContent = m.label;
+      if (m.id === currentImageModel) opt.selected = true;
+      imageModelSelect.appendChild(opt);
+    });
+  }
+
   const open = () => {
     if (apiInput) apiInput.value = getGeminiKey();
-    // Sync model selector to current value
-    if (modelSelect) modelSelect.value = getGeminiModel();
+    // Sync model selectors to current values
+    if (modelSelect)      modelSelect.value      = getGeminiModel();
+    if (imageModelSelect) imageModelSelect.value = getImageModel();
     refreshStorageInfo();
     modal.classList.remove('hidden');
     apiInput?.focus();
@@ -238,6 +271,20 @@ function initSettingsModal() {
     const label = GEMINI_MODELS.find(m => m.id === selected)?.label || selected;
     if (status) status.innerHTML = `<span style="color:var(--color-success)">✓ Model set to ${label}</span>`;
     showToast('Model saved!', 'success');
+  });
+
+  document.getElementById('save-image-model-btn')?.addEventListener('click', () => {
+    const selected = imageModelSelect?.value;
+    if (!selected) { showToast('Select an image model first.', 'error'); return; }
+    const modelDef = IMAGE_MODELS.find(m => m.id === selected);
+    if (modelDef?.requiresKey && !getGeminiKey()) {
+      showToast('This model requires a Gemini API key — save one above first.', 'error');
+      return;
+    }
+    setImageModel(selected);
+    const status = document.getElementById('image-model-status');
+    if (status) status.innerHTML = `<span style="color:var(--color-success)">✓ Image model set to ${modelDef?.label || selected}</span>`;
+    showToast('Image model saved!', 'success');
   });
 
   document.getElementById('export-btn')?.addEventListener('click', () => {

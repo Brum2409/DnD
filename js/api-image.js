@@ -1,8 +1,9 @@
 /**
- * api-image.js — Pollinations.ai image generation wrapper.
+ * api-image.js — Image generation wrapper supporting multiple providers.
  *
- * Pollinations.ai is completely free — no API key required.
- * Images are served directly as URLs with the prompt encoded in the path.
+ * Providers:
+ *   - Pollinations.ai (free, no API key required) — default
+ *   - Google Imagen 3 / Imagen 3 Fast (requires Gemini API key)
  *
  * Usage:
  *   import { generateImage, generateIconBase64, buildIconPrompt } from './api-image.js';
@@ -11,31 +12,107 @@
  *   const b64  = await generateIconBase64('Flaming sword, legendary weapon');
  */
 
-const POLLINATIONS_BASE = 'https://gen.pollinations.ai/image';
+import { getGeminiKey } from './api-gemini.js';
+
+const POLLINATIONS_BASE    = 'https://gen.pollinations.ai/image';
+const GEMINI_IMAGE_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
+
+// ── Model registry ─────────────────────────────────────────────
+
+export const IMAGE_MODELS = [
+  { id: 'pollinations',                 label: 'Pollinations.ai / Flux (Free — No Key Required)', requiresKey: false },
+  { id: 'imagen-3.0-generate-002',      label: 'Google Imagen 3 (Requires API Key)',               requiresKey: true  },
+  { id: 'imagen-3.0-fast-generate-001', label: 'Google Imagen 3 Fast (Requires API Key)',          requiresKey: true  },
+];
+
+const DEFAULT_IMAGE_MODEL = 'pollinations';
+
+export function getImageModel() {
+  return localStorage.getItem('image_model') || DEFAULT_IMAGE_MODEL;
+}
+
+export function setImageModel(modelId) {
+  localStorage.setItem('image_model', modelId);
+}
 
 // ── Core image generation ─────────────────────────────────────
 
 /**
- * Generate an image URL via Pollinations.ai.
- * The image is served directly at the returned URL — no extra fetch needed
- * unless you want to convert it to base64.
+ * Generate an image using the currently selected provider.
+ *
+ * Returns either:
+ *   - A Pollinations URL string (model = 'pollinations')
+ *   - A base64 data URL     (model = any Google Imagen model)
  *
  * @param {string} prompt
  * @param {number} [width]
  * @param {number} [height]
- * @param {number} [seed]   - use Date.now() for variety, fixed value for reproducibility
- * @returns {Promise<string>}  the image URL
+ * @param {number} [seed]   - used only by Pollinations; ignored for Imagen
+ * @returns {Promise<string>}  image URL or data URL
  */
 export async function generateImage(prompt, width = 512, height = 512, seed = null) {
-  const encoded = encodeURIComponent(prompt);
-  const s       = seed ?? Date.now();
-  const url     = `${POLLINATIONS_BASE}/${encoded}?width=${width}&height=${height}&seed=${s}&model=flux`;
-  return url;
+  const model = getImageModel();
+
+  if (model === 'pollinations') {
+    const encoded = encodeURIComponent(prompt);
+    const s       = seed ?? Date.now();
+    return `${POLLINATIONS_BASE}/${encoded}?width=${width}&height=${height}&seed=${s}&model=flux`;
+  }
+
+  return _generateImagenImage(prompt, width, height, model);
 }
 
 /**
+ * Call the Google Imagen API (via Gemini API endpoint).
+ *
+ * @param {string} prompt
+ * @param {number} width
+ * @param {number} height
+ * @param {string} modelId
+ * @returns {Promise<string>}  base64 data URL
+ */
+async function _generateImagenImage(prompt, width, height, modelId) {
+  const key = getGeminiKey();
+  if (!key) throw new Error('A Gemini API key is required for Google Imagen models. Set one in Settings.');
+
+  // Map dimensions to the closest supported aspect ratio
+  const ratio = width / height;
+  let aspectRatio = '1:1';
+  if      (ratio >= 1.6)  aspectRatio = '16:9';
+  else if (ratio >= 1.2)  aspectRatio = '4:3';
+  else if (ratio <= 0.65) aspectRatio = '9:16';
+  else if (ratio <= 0.85) aspectRatio = '3:4';
+
+  const url = `${GEMINI_IMAGE_API_BASE}/${modelId}:predict?key=${key}`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      instances:  [{ prompt }],
+      parameters: { sampleCount: 1, aspectRatio },
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(`Imagen API error: ${err.error?.message || `HTTP ${response.status}`}`);
+  }
+
+  const data = await response.json();
+  const prediction = data.predictions?.[0];
+  const b64  = prediction?.bytesBase64Encoded;
+  const mime = prediction?.mimeType || 'image/png';
+
+  if (!b64) throw new Error('No image data returned from Google Imagen.');
+
+  return `data:${mime};base64,${b64}`;
+}
+
+// ── Icon generation ───────────────────────────────────────────
+
+/**
  * Generate a small icon and return it as a base64 data URL.
- * The result is suitable for caching inside an Item's `iconBase64` field.
+ * Works with both Pollinations (fetches URL → base64) and Imagen (already base64).
  *
  * @param {string} prompt
  * @param {number} [size]   - icon dimensions (square), default 128
@@ -43,11 +120,14 @@ export async function generateImage(prompt, width = 512, height = 512, seed = nu
  */
 export async function generateIconBase64(prompt, size = 128) {
   const fullPrompt = `${prompt}, game item icon, fantasy art, dark background, detailed illustration`;
-  const url        = await generateImage(fullPrompt, size, size);
+  const result     = await generateImage(fullPrompt, size, size);
 
-  const response = await fetch(url);
+  // Imagen returns a data URL directly — no extra fetch needed
+  if (result.startsWith('data:')) return result;
+
+  // Pollinations returns a URL — fetch and convert to base64
+  const response = await fetch(result);
   if (!response.ok) throw new Error(`Image fetch failed: HTTP ${response.status}`);
-
   const blob = await response.blob();
   return blobToBase64(blob);
 }
@@ -56,7 +136,7 @@ export async function generateIconBase64(prompt, size = 128) {
  * Generate a scene image (wide format) for the game screen.
  *
  * @param {string} prompt
- * @returns {Promise<string>}  image URL
+ * @returns {Promise<string>}  image URL or data URL
  */
 export async function generateSceneImage(prompt) {
   const enhancedPrompt = `${prompt}, fantasy digital painting, dramatic lighting, cinematic, highly detailed`;
@@ -86,10 +166,10 @@ export function buildIconPrompt(item) {
 // ── Portrait generation ───────────────────────────────────────
 
 /**
- * Generate a character portrait URL.
+ * Generate a character portrait URL or data URL.
  *
  * @param {{ name: string, race: string, class: string, backstory: string }} character
- * @returns {Promise<string>}  image URL
+ * @returns {Promise<string>}
  */
 export async function generatePortrait(character) {
   const prompt = `Portrait of ${character.name}, ${character.race} ${character.class}, DND fantasy character, dramatic lighting, detailed face, oil painting style, dark background`;
@@ -121,7 +201,7 @@ function blobToBase64(blob) {
  */
 export function checkImageUrl(url) {
   return new Promise(resolve => {
-    const img  = new Image();
+    const img   = new Image();
     img.onload  = () => resolve(true);
     img.onerror = () => resolve(false);
     img.src     = url;

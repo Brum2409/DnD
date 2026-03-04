@@ -1,5 +1,10 @@
 /**
- * db.js — Single source of truth for all localStorage read/write operations.
+ * db.js — Single source of truth for all data operations.
+ *
+ * After Vercel migration: data is stored server-side in Postgres (per user).
+ * An in-memory cache is populated once on page load via init().
+ * All read operations are synchronous (from cache).
+ * All write operations update the cache immediately, then sync to the server async.
  *
  * Data models (JSDoc types):
  *
@@ -85,39 +90,52 @@
  * @property {number} updatedAt
  */
 
-// ── Storage keys ──────────────────────────────────────────────
-const KEYS = {
-  characters: 'dnd_characters',
-  items:      'dnd_items',
-  stories:    'dnd_stories',
+// ── In-memory cache ────────────────────────────────────────────
+
+const cache = {
+  characters: [],
+  items: [],
+  stories: [],
+  loaded: false,
 };
 
-// ── Internal helpers ──────────────────────────────────────────
+// ── Initialization ─────────────────────────────────────────────
 
-function readAll(key) {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    console.error(`[db] Failed to read "${key}" from localStorage`);
-    return [];
-  }
+/**
+ * Load all user data from the server into the in-memory cache.
+ * Idempotent — safe to call multiple times (only fetches once).
+ * Must be awaited before any read/write operations.
+ * Called automatically by auth.js initPage().
+ *
+ * @returns {Promise<void>}
+ */
+export async function init() {
+  if (cache.loaded) return;
+  const resp = await fetch('/api/data', { credentials: 'include' });
+  if (!resp.ok) throw new Error('Failed to load user data from server');
+  const data = await resp.json();
+  cache.characters = Array.isArray(data.characters) ? data.characters : [];
+  cache.items      = Array.isArray(data.items)      ? data.items      : [];
+  cache.stories    = Array.isArray(data.stories)    ? data.stories    : [];
+  cache.loaded = true;
 }
 
-function writeAll(key, data) {
-  try {
-    localStorage.setItem(key, JSON.stringify(data));
-  } catch (e) {
-    if (e.name === 'QuotaExceededError') {
-      console.error('[db] localStorage quota exceeded');
-      throw new Error('Storage full. Try clearing icon caches in Settings.');
-    }
-    throw e;
-  }
+// ── Internal API helpers ───────────────────────────────────────
+
+function apiPut(path, body) {
+  fetch(path, {
+    method: 'PUT',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }).catch(err => console.error(`[db] PUT ${path} failed:`, err));
 }
 
-function findById(arr, id) {
-  return arr.find(item => item.id === id) || null;
+function apiDelete(path) {
+  fetch(path, {
+    method: 'DELETE',
+    credentials: 'include',
+  }).catch(err => console.error(`[db] DELETE ${path} failed:`, err));
 }
 
 // ── Characters ────────────────────────────────────────────────
@@ -126,7 +144,7 @@ function findById(arr, id) {
  * @returns {Character[]}
  */
 export function getAllCharacters() {
-  return readAll(KEYS.characters);
+  return [...cache.characters];
 }
 
 /**
@@ -134,31 +152,31 @@ export function getAllCharacters() {
  * @returns {Character|null}
  */
 export function getCharacter(id) {
-  return findById(getAllCharacters(), id);
+  return cache.characters.find(c => c.id === id) || null;
 }
 
 /**
- * Upserts a character (insert or update by id).
+ * Upsert a character (insert or update by id).
+ * Updates cache immediately; syncs to server async.
  * @param {Character} char
  */
 export function saveCharacter(char) {
-  const all = getAllCharacters();
-  const idx = all.findIndex(c => c.id === char.id);
   char.updatedAt = Date.now();
+  const idx = cache.characters.findIndex(c => c.id === char.id);
   if (idx >= 0) {
-    all[idx] = char;
+    cache.characters[idx] = char;
   } else {
-    all.push(char);
+    cache.characters.push(char);
   }
-  writeAll(KEYS.characters, all);
+  apiPut(`/api/characters/${char.id}`, char);
 }
 
 /**
  * @param {string} id
  */
 export function deleteCharacter(id) {
-  const filtered = getAllCharacters().filter(c => c.id !== id);
-  writeAll(KEYS.characters, filtered);
+  cache.characters = cache.characters.filter(c => c.id !== id);
+  apiDelete(`/api/characters/${id}`);
 }
 
 // ── Items ─────────────────────────────────────────────────────
@@ -167,7 +185,7 @@ export function deleteCharacter(id) {
  * @returns {Item[]}
  */
 export function getAllItems() {
-  return readAll(KEYS.items);
+  return [...cache.items];
 }
 
 /**
@@ -175,29 +193,29 @@ export function getAllItems() {
  * @returns {Item|null}
  */
 export function getItem(id) {
-  return findById(getAllItems(), id);
+  return cache.items.find(i => i.id === id) || null;
 }
 
 /**
+ * Upsert an item.
  * @param {Item} item
  */
 export function saveItem(item) {
-  const all = getAllItems();
-  const idx = all.findIndex(i => i.id === item.id);
+  const idx = cache.items.findIndex(i => i.id === item.id);
   if (idx >= 0) {
-    all[idx] = item;
+    cache.items[idx] = item;
   } else {
-    all.push(item);
+    cache.items.push(item);
   }
-  writeAll(KEYS.items, all);
+  apiPut(`/api/items/${item.id}`, item);
 }
 
 /**
  * @param {string} id
  */
 export function deleteItem(id) {
-  const filtered = getAllItems().filter(i => i.id !== id);
-  writeAll(KEYS.items, filtered);
+  cache.items = cache.items.filter(i => i.id !== id);
+  apiDelete(`/api/items/${id}`);
 }
 
 // ── Stories ───────────────────────────────────────────────────
@@ -206,7 +224,7 @@ export function deleteItem(id) {
  * @returns {Story[]}
  */
 export function getAllStories() {
-  return readAll(KEYS.stories);
+  return [...cache.stories];
 }
 
 /**
@@ -214,30 +232,30 @@ export function getAllStories() {
  * @returns {Story|null}
  */
 export function getStory(id) {
-  return findById(getAllStories(), id);
+  return cache.stories.find(s => s.id === id) || null;
 }
 
 /**
+ * Upsert a story.
  * @param {Story} story
  */
 export function saveStory(story) {
-  const all = getAllStories();
-  const idx = all.findIndex(s => s.id === story.id);
   story.updatedAt = Date.now();
+  const idx = cache.stories.findIndex(s => s.id === story.id);
   if (idx >= 0) {
-    all[idx] = story;
+    cache.stories[idx] = story;
   } else {
-    all.push(story);
+    cache.stories.push(story);
   }
-  writeAll(KEYS.stories, all);
+  apiPut(`/api/stories/${story.id}`, story);
 }
 
 /**
  * @param {string} id
  */
 export function deleteStory(id) {
-  const filtered = getAllStories().filter(s => s.id !== id);
-  writeAll(KEYS.stories, filtered);
+  cache.stories = cache.stories.filter(s => s.id !== id);
+  apiDelete(`/api/stories/${id}`);
 }
 
 // ── Convenience operations ────────────────────────────────────
@@ -304,35 +322,35 @@ export function addToAdventureLog(charId, entry) {
  * @returns {Story|null}
  */
 export function getActiveStory() {
-  return getAllStories().find(s => s.status === 'active') || null;
+  return cache.stories.find(s => s.status === 'active') || null;
 }
 
 /**
- * Clears all icon base64 data from items to free localStorage space.
- * Call when storage is approaching quota.
+ * Clears all icon base64 data from items to reduce storage size.
+ * Syncs the updated items to the server.
  */
 export function clearIconCache() {
-  const items = getAllItems().map(item => ({ ...item, iconBase64: '' }));
-  writeAll(KEYS.items, items);
+  cache.items = cache.items.map(item => ({ ...item, iconBase64: '' }));
+  // Sync all items to server
+  for (const item of cache.items) {
+    apiPut(`/api/items/${item.id}`, item);
+  }
 }
 
 /**
- * Returns an approximate storage usage summary.
+ * Returns storage usage summary based on in-memory cache sizes.
  * @returns {{ characters: number, items: number, stories: number, total: number }}
  */
 export function getStorageStats() {
-  const measure = key => {
-    const val = localStorage.getItem(key) || '';
-    return new Blob([val]).size;
-  };
-  const c = measure(KEYS.characters);
-  const i = measure(KEYS.items);
-  const s = measure(KEYS.stories);
+  const measure = obj => new Blob([JSON.stringify(obj)]).size;
+  const c = measure(cache.characters);
+  const i = measure(cache.items);
+  const s = measure(cache.stories);
   return { characters: c, items: i, stories: s, total: c + i + s };
 }
 
 /**
- * Export all data as a JSON object.
+ * Export all data as a JSON object (reads from cache).
  * @returns {Object}
  */
 export function exportAllData() {
@@ -347,40 +365,47 @@ export function exportAllData() {
 
 /**
  * Import data from an export object, merging by id (no duplicates).
+ * Syncs all imported entities to the server.
  * @param {Object} data
  */
 export function importData(data) {
   if (data.characters) {
-    const existing = getAllCharacters();
-    const merged = [...existing];
     for (const c of data.characters) {
-      if (!merged.find(x => x.id === c.id)) merged.push(c);
+      if (!cache.characters.find(x => x.id === c.id)) {
+        cache.characters.push(c);
+        apiPut(`/api/characters/${c.id}`, c);
+      }
     }
-    writeAll(KEYS.characters, merged);
   }
   if (data.items) {
-    const existing = getAllItems();
-    const merged = [...existing];
     for (const i of data.items) {
-      if (!merged.find(x => x.id === i.id)) merged.push(i);
+      if (!cache.items.find(x => x.id === i.id)) {
+        cache.items.push(i);
+        apiPut(`/api/items/${i.id}`, i);
+      }
     }
-    writeAll(KEYS.items, merged);
   }
   if (data.stories) {
-    const existing = getAllStories();
-    const merged = [...existing];
     for (const s of data.stories) {
-      if (!merged.find(x => x.id === s.id)) merged.push(s);
+      if (!cache.stories.find(x => x.id === s.id)) {
+        cache.stories.push(s);
+        apiPut(`/api/stories/${s.id}`, s);
+      }
     }
-    writeAll(KEYS.stories, merged);
   }
 }
 
 /**
- * Wipe all DND data from localStorage. Use with caution!
+ * Wipe all user data from cache and the server.
  */
 export function clearAllData() {
-  localStorage.removeItem(KEYS.characters);
-  localStorage.removeItem(KEYS.items);
-  localStorage.removeItem(KEYS.stories);
+  // Delete all entities from server
+  for (const c of cache.characters) apiDelete(`/api/characters/${c.id}`);
+  for (const i of cache.items)      apiDelete(`/api/items/${i.id}`);
+  for (const s of cache.stories)    apiDelete(`/api/stories/${s.id}`);
+
+  // Clear cache
+  cache.characters = [];
+  cache.items      = [];
+  cache.stories    = [];
 }

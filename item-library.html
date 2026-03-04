@@ -650,13 +650,12 @@
 </div>
 
 <script type="module">
+  import { initPage }                          from './js/auth.js';
   import { initCommonUI }                      from './js/app.js';
   import { getAllItems, getItem, saveItem, deleteItem, getAllCharacters } from './js/db.js';
   import { geminiGenerate, hasGeminiKey }      from './js/api-gemini.js';
   import { generateIconBase64, buildIconPrompt } from './js/api-image.js';
   import { uuid, showToast, escapeHtml, formatDate } from './js/utils.js';
-
-  initCommonUI();
 
   // ── Constants ─────────────────────────────────────────────────
 
@@ -1117,9 +1116,14 @@ Return ONLY valid JSON (no markdown, no explanation) with this exact structure:
   );
 
   // ── Initialise ─────────────────────────────────────────────────
-  loadAll();
-  renderStats();
-  renderGrid();
+  (async () => {
+    const user = await initPage();
+    if (!user) return;
+    initCommonUI();
+    loadAll();
+    renderStats();
+    renderGrid();
+  })();
 </script>
 
 </body>

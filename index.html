@@ -211,6 +211,7 @@
 </div>
 
 <script type="module">
+import { initPage } from './js/auth.js';
 import { initCommonUI } from './js/app.js';
 import {
   getAllCharacters, getAllItems, getAllStories, getActiveStory,
@@ -442,9 +443,14 @@ function adjustLayout() {
 }
 
 // ── Init ──────────────────────────────────────────────────────
-renderDashboard();
-adjustLayout();
-window.addEventListener('resize', adjustLayout);
+(async () => {
+  const user = await initPage();
+  if (!user) return;
+  initCommonUI();
+  renderDashboard();
+  adjustLayout();
+  window.addEventListener('resize', adjustLayout);
+})();
 </script>
 </body>
 </html>

@@ -354,6 +354,7 @@
 </div>
 
 <script type="module">
+import { initPage }                                    from './js/auth.js';
 import { initCommonUI }                                from './js/app.js';
 import {
   getAllCharacters, getCharacter, saveCharacter, deleteCharacter,
@@ -368,8 +369,6 @@ import {
 } from './js/utils.js';
 import { geminiGenerate, hasGeminiKey } from './js/api-gemini.js';
 import { generateIconBase64, buildIconPrompt } from './js/api-image.js';
-
-initCommonUI();
 
 // ── Page state ────────────────────────────────────────────────
 let selectedCharId = null;
@@ -1133,7 +1132,12 @@ document.getElementById('log-save')?.addEventListener('click', () => {
 });
 
 // ── Start ─────────────────────────────────────────────────────
-init();
+(async () => {
+  const user = await initPage();
+  if (!user) return;
+  initCommonUI();
+  init();
+})();
 </script>
 </body>
 </html>

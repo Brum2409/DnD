@@ -548,6 +548,7 @@
 </main>
 
 <script type="module">
+import { initPage }                                    from './js/auth.js';
 import { initCommonUI }                                from './js/app.js';
 import { saveCharacter }                               from './js/db.js';
 import {
@@ -557,8 +558,6 @@ import {
 } from './js/utils.js';
 import { geminiGenerate, hasGeminiKey }                from './js/api-gemini.js';
 import { generatePortrait as genPortraitUrl }          from './js/api-image.js';
-
-initCommonUI();
 
 // ── Constants ─────────────────────────────────────────────────
 
@@ -1244,16 +1243,17 @@ dropArea.addEventListener('drop', e => {
 });
 
 // ── Initialise ────────────────────────────────────────────────
-
-renderRaceGrid();
-renderClassGrid();
-updateRaceBadge();
-updateClassBadge();
-
-// Initialise score UI in standard array mode
-setScoreMethod('standard');
-
-goToStep(1);
+(async () => {
+  const user = await initPage();
+  if (!user) return;
+  initCommonUI();
+  renderRaceGrid();
+  renderClassGrid();
+  updateRaceBadge();
+  updateClassBadge();
+  setScoreMethod('standard');
+  goToStep(1);
+})();
 </script>
 </body>
 </html>

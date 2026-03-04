@@ -9,7 +9,7 @@
  *   initCommonUI();
  */
 
-import { getGeminiKey, setGeminiKey, testGeminiKey } from './api-gemini.js';
+import { getGeminiKey, setGeminiKey, testGeminiKey, getGeminiModel, setGeminiModel, GEMINI_MODELS } from './api-gemini.js';
 import {
   getStorageStats, clearIconCache, clearAllData,
   exportAllData, importData,
@@ -118,6 +118,23 @@ function injectSettingsModal() {
 
         <hr class="divider" />
 
+        <!-- Model selection -->
+        <div style="margin-bottom:1.5rem;">
+          <h3 style="font-size:0.95rem;color:var(--color-primary);margin-bottom:1rem;font-family:var(--font-display);">
+            🤖 AI Model
+          </h3>
+          <div class="form-group">
+            <label for="model-select">Gemini Model</label>
+            <select id="model-select" style="width:100%;background:var(--color-surface-2);border:1px solid var(--color-border);border-radius:var(--radius);color:var(--color-text);font-family:var(--font-ui);font-size:0.88rem;padding:0.55rem 0.75rem;cursor:pointer;">
+            </select>
+            <div class="form-hint">Affects all AI text generation. Preview models may have rate limits.</div>
+          </div>
+          <button class="btn btn-primary btn-sm" id="save-model-btn">💾 Save Model</button>
+          <div id="model-status" style="margin-top:0.75rem;font-family:var(--font-ui);font-size:0.8rem;"></div>
+        </div>
+
+        <hr class="divider" />
+
         <!-- Data management -->
         <div>
           <h3 style="font-size:0.95rem;color:var(--color-primary);margin-bottom:1rem;font-family:var(--font-display);">
@@ -155,8 +172,23 @@ function initSettingsModal() {
   const apiInput   = document.getElementById('api-key-input');
   if (!modal) return;
 
+  // Populate model dropdown
+  const modelSelect = document.getElementById('model-select');
+  if (modelSelect) {
+    const currentModel = getGeminiModel();
+    GEMINI_MODELS.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m.id;
+      opt.textContent = m.label;
+      if (m.id === currentModel) opt.selected = true;
+      modelSelect.appendChild(opt);
+    });
+  }
+
   const open = () => {
     if (apiInput) apiInput.value = getGeminiKey();
+    // Sync model selector to current value
+    if (modelSelect) modelSelect.value = getGeminiModel();
     refreshStorageInfo();
     modal.classList.remove('hidden');
     apiInput?.focus();
@@ -196,6 +228,16 @@ function initSettingsModal() {
       if (status) status.innerHTML = '<span style="color:var(--color-danger)">✕ Test failed. Check your key.</span>';
       showToast('API key test failed.', 'error');
     }
+  });
+
+  document.getElementById('save-model-btn')?.addEventListener('click', () => {
+    const selected = modelSelect?.value;
+    if (!selected) { showToast('Select a model first.', 'error'); return; }
+    setGeminiModel(selected);
+    const status = document.getElementById('model-status');
+    const label = GEMINI_MODELS.find(m => m.id === selected)?.label || selected;
+    if (status) status.innerHTML = `<span style="color:var(--color-success)">✓ Model set to ${label}</span>`;
+    showToast('Model saved!', 'success');
   });
 
   document.getElementById('export-btn')?.addEventListener('click', () => {

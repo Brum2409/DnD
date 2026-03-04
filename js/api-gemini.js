@@ -10,8 +10,18 @@
  *   const text = await geminiGenerate('Write a short DND tavern description.');
  *   const reply = await geminiChat(history, systemPrompt);
  */
-const GEMINI_MODEL = 'gemini-3-flash';
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
+
+/** Available models the user can choose from. */
+export const GEMINI_MODELS = [
+  { id: 'gemini-3.1-flash-lite-preview', label: 'Gemini 3.1 Flash-Lite Preview (Default)' },
+  { id: 'gemini-2.5-flash',              label: 'Gemini 2.5 Flash' },
+  { id: 'gemini-2.5-flash-lite',         label: 'Gemini 2.5 Flash-Lite (Budget)' },
+  { id: 'gemini-2.0-flash',              label: 'Gemini 2.0 Flash' },
+  { id: 'gemini-1.5-flash',              label: 'Gemini 1.5 Flash (Legacy)' },
+];
+
+const DEFAULT_GEMINI_MODEL = 'gemini-3.1-flash-lite-preview';
 
 // ── Key management ────────────────────────────────────────────
 
@@ -39,6 +49,24 @@ export function hasGeminiKey() {
   return Boolean(getGeminiKey());
 }
 
+// ── Model management ──────────────────────────────────────────
+
+/**
+ * Get the currently selected Gemini model ID.
+ * @returns {string}
+ */
+export function getGeminiModel() {
+  return localStorage.getItem('gemini_model') || DEFAULT_GEMINI_MODEL;
+}
+
+/**
+ * Persist the selected Gemini model ID.
+ * @param {string} modelId
+ */
+export function setGeminiModel(modelId) {
+  localStorage.setItem('gemini_model', modelId);
+}
+
 // ── Core API call ─────────────────────────────────────────────
 
 /**
@@ -52,7 +80,7 @@ async function callGemini(contents, systemInstruction = '', temperature = 0.85) 
   const key = getGeminiKey();
   if (!key) throw new Error('Gemini API key not set. Click ⚙️ Settings to add your key.');
 
-  const url = `${GEMINI_API_BASE}/${GEMINI_MODEL}:generateContent?key=${key}`;
+  const url = `${GEMINI_API_BASE}/${getGeminiModel()}:generateContent?key=${key}`;
 
   const body = {
     contents,

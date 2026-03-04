@@ -1,8 +1,8 @@
 /**
  * app.js — Shared UI initialisation for all pages.
  *
- * Injects: settings modal, toast container, loading overlay.
- * Wires:   hamburger nav, API-key management, data management.
+ * Injects: settings modal, toast container, loading overlay, account section.
+ * Wires:   hamburger nav, API-key management, data management, user account.
  *
  * Usage in every page:
  *   import { initCommonUI } from './js/app.js';
@@ -16,6 +16,7 @@ import {
   exportAllData, importData,
 } from './db.js';
 import { showToast } from './utils.js';
+import { getCurrentUser, logout } from './auth.js';
 
 // ── Public entry point ────────────────────────────────────────
 
@@ -25,6 +26,7 @@ export function initCommonUI() {
   initHamburger();
   injectSettingsModal();
   initSettingsModal();
+  initUserDisplay();
 }
 
 // ── Infrastructure ────────────────────────────────────────────
@@ -49,6 +51,32 @@ function ensureLoadingOverlay() {
     <div class="loading-message" id="loading-message">Loading…</div>
   `;
   document.body.appendChild(el);
+}
+
+// ── User display in navbar ────────────────────────────────────
+
+function initUserDisplay() {
+  const user = getCurrentUser();
+  if (!user) return;
+
+  // Inject username + logout into navbar-actions
+  const actionsEl = document.querySelector('.navbar-actions');
+  if (actionsEl) {
+    const userSpan = document.createElement('span');
+    userSpan.style.cssText = 'font-family:var(--font-ui);font-size:0.8rem;color:var(--color-text-muted);';
+    userSpan.textContent = `👤 ${user.username}`;
+
+    const logoutBtn = document.createElement('button');
+    logoutBtn.className = 'btn btn-ghost btn-sm';
+    logoutBtn.textContent = 'Sign Out';
+    logoutBtn.title = 'Sign out of your account';
+    logoutBtn.addEventListener('click', () => {
+      if (confirm('Sign out of DND AI?')) logout();
+    });
+
+    actionsEl.insertBefore(logoutBtn, actionsEl.firstChild);
+    actionsEl.insertBefore(userSpan, actionsEl.firstChild);
+  }
 }
 
 // ── Hamburger nav ─────────────────────────────────────────────
@@ -77,6 +105,8 @@ function initHamburger() {
 function injectSettingsModal() {
   if (document.getElementById('settings-modal')) return;
 
+  const user = getCurrentUser();
+
   const modal = document.createElement('div');
   modal.id        = 'settings-modal';
   modal.className = 'modal-overlay hidden';
@@ -91,6 +121,20 @@ function injectSettingsModal() {
         <button class="modal-close" id="settings-close" aria-label="Close settings">✕</button>
       </div>
       <div class="modal-body">
+
+        <!-- Account info -->
+        ${user ? `
+        <div style="margin-bottom:1.5rem;">
+          <h3 style="font-size:0.95rem;color:var(--color-primary);margin-bottom:1rem;font-family:var(--font-display);">
+            👤 Account
+          </h3>
+          <div style="font-family:var(--font-ui);font-size:0.88rem;color:var(--color-text-muted);margin-bottom:0.75rem;">
+            Signed in as <strong style="color:var(--color-text);">${user.username}</strong> &nbsp;(${user.email})
+          </div>
+          <button class="btn btn-ghost btn-sm" id="settings-logout-btn">🚪 Sign Out</button>
+        </div>
+        <hr class="divider" />
+        ` : ''}
 
         <!-- API Key -->
         <div style="margin-bottom:1.5rem;">
@@ -107,7 +151,7 @@ function injectSettingsModal() {
             <div class="form-hint">
               Get a free key at
               <a href="https://ai.google.dev" target="_blank" rel="noopener">ai.google.dev</a>.
-              Stored only in your browser.
+              Saved securely to your account.
             </div>
           </div>
           <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
@@ -162,7 +206,7 @@ function injectSettingsModal() {
               <div class="form-hint">
                 Get a free token at
                 <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noopener">huggingface.co/settings/tokens</a>
-                (free account, no credit card). Stored only in your browser.
+                (free account, no credit card). Saved securely to your account.
               </div>
             </div>
             <button class="btn btn-primary btn-sm" id="save-hf-key-btn">💾 Save HF Key</button>
@@ -255,6 +299,11 @@ function initSettingsModal() {
   document.getElementById('settings-close')?.addEventListener('click', close);
   modal.addEventListener('click', e => { if (e.target === modal) close(); });
 
+  // Account logout from settings modal
+  document.getElementById('settings-logout-btn')?.addEventListener('click', () => {
+    if (confirm('Sign out of DND AI?')) logout();
+  });
+
   document.getElementById('toggle-key-visibility')?.addEventListener('click', () => {
     if (apiInput) apiInput.type = apiInput.type === 'password' ? 'text' : 'password';
   });
@@ -265,7 +314,7 @@ function initSettingsModal() {
     setGeminiKey(key);
     showToast('API key saved!', 'success');
     const status = document.getElementById('key-status');
-    if (status) status.innerHTML = '<span style="color:var(--color-success)">✓ Key saved</span>';
+    if (status) status.innerHTML = '<span style="color:var(--color-success)">✓ Key saved to your account</span>';
   });
 
   document.getElementById('test-key-btn')?.addEventListener('click', async () => {
@@ -306,7 +355,7 @@ function initSettingsModal() {
     setHFKey(key);
     showToast('HF API key saved!', 'success');
     const status = document.getElementById('hf-key-status');
-    if (status) status.innerHTML = '<span style="color:var(--color-success)">✓ HF key saved</span>';
+    if (status) status.innerHTML = '<span style="color:var(--color-success)">✓ HF key saved to your account</span>';
   });
 
   document.getElementById('save-image-model-btn')?.addEventListener('click', () => {
@@ -351,6 +400,7 @@ function initSettingsModal() {
     try {
       importData(JSON.parse(await file.text()));
       showToast('Data imported successfully!', 'success');
+      refreshStorageInfo();
     } catch (err) {
       showToast('Import failed: ' + err.message, 'error');
     }
@@ -368,6 +418,7 @@ function initSettingsModal() {
     if (!confirm('⚠️ Delete ALL characters, items, and campaigns? This cannot be undone.')) return;
     clearAllData();
     showToast('All data cleared.', 'info');
+    refreshStorageInfo();
   });
 }
 
@@ -376,5 +427,5 @@ function refreshStorageInfo() {
   if (!el) return;
   const stats = getStorageStats();
   const fmt   = n => n < 1024 ? `${n} B` : n < 1048576 ? `${(n/1024).toFixed(1)} KB` : `${(n/1048576).toFixed(2)} MB`;
-  el.textContent = `Storage used: ${fmt(stats.total)} (Characters: ${fmt(stats.characters)}, Items: ${fmt(stats.items)}, Stories: ${fmt(stats.stories)})`;
+  el.textContent = `Data size: ${fmt(stats.total)} (Characters: ${fmt(stats.characters)}, Items: ${fmt(stats.items)}, Stories: ${fmt(stats.stories)})`;
 }

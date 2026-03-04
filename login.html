@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DND AI — Sign In</title>
+  <meta name="description" content="Sign in to your DND AI account to access your characters, campaigns, and adventures." />
+
+  <!-- Favicon (inline SVG d20) -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpolygon points='16,2 30,10 30,22 16,30 2,22 2,10' fill='%230d0d0f' stroke='%23c9a84c' stroke-width='2'/%3E%3Ctext x='16' y='21' text-anchor='middle' font-size='14' fill='%23c9a84c' font-family='serif'%3E20%3C/text%3E%3C/svg%3E" />
+
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/components.css" />
+  <link rel="stylesheet" href="css/layout.css" />
+
+  <style>
+    .login-page {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem 1rem;
+      background:
+        radial-gradient(ellipse at 20% 50%, rgba(123,79,200,0.08) 0%, transparent 60%),
+        radial-gradient(ellipse at 80% 20%, rgba(201,168,76,0.06) 0%, transparent 50%),
+        var(--color-bg);
+    }
+
+    .login-card {
+      width: 100%;
+      max-width: 420px;
+    }
+
+    .login-brand {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    .login-brand-icon {
+      font-size: 3rem;
+      display: block;
+      margin-bottom: 0.5rem;
+    }
+
+    .login-brand-title {
+      font-family: var(--font-display);
+      font-size: 1.8rem;
+      color: var(--color-primary);
+      letter-spacing: 0.04em;
+    }
+
+    .login-brand-sub {
+      font-family: var(--font-ui);
+      font-size: 0.85rem;
+      color: var(--color-text-muted);
+      margin-top: 0.25rem;
+    }
+
+    .login-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--color-border);
+      margin-bottom: 1.75rem;
+    }
+
+    .login-tab {
+      flex: 1;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      padding: 0.75rem 1rem;
+      font-family: var(--font-display);
+      font-size: 0.95rem;
+      color: var(--color-text-muted);
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+    }
+
+    .login-tab.active {
+      color: var(--color-primary);
+      border-bottom-color: var(--color-primary);
+    }
+
+    .login-tab:hover:not(.active) {
+      color: var(--color-text);
+    }
+
+    .login-panel {
+      display: none;
+    }
+
+    .login-panel.active {
+      display: block;
+    }
+
+    .login-error {
+      background: rgba(220, 53, 69, 0.12);
+      border: 1px solid rgba(220, 53, 69, 0.3);
+      border-radius: var(--radius);
+      padding: 0.75rem 1rem;
+      font-family: var(--font-ui);
+      font-size: 0.875rem;
+      color: var(--color-danger);
+      margin-bottom: 1rem;
+      display: none;
+    }
+
+    .login-error.visible {
+      display: block;
+    }
+
+    .login-submit {
+      width: 100%;
+      justify-content: center;
+      margin-top: 0.5rem;
+    }
+
+    .login-divider {
+      text-align: center;
+      font-family: var(--font-ui);
+      font-size: 0.8rem;
+      color: var(--color-text-faint);
+      margin-top: 1.5rem;
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 1em;
+      height: 1em;
+      border: 2px solid currentColor;
+      border-right-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      vertical-align: middle;
+      margin-right: 0.4em;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+
+<div class="login-page">
+  <div class="login-card">
+
+    <!-- Brand header -->
+    <div class="login-brand">
+      <span class="login-brand-icon">⚔️</span>
+      <div class="login-brand-title">DND AI</div>
+      <div class="login-brand-sub">AI-Powered Dungeon Master</div>
+    </div>
+
+    <!-- Card -->
+    <div class="card">
+      <div class="card-body" style="padding: 1.75rem;">
+
+        <!-- Tabs -->
+        <div class="login-tabs">
+          <button class="login-tab active" id="tab-login" type="button">Sign In</button>
+          <button class="login-tab" id="tab-register" type="button">Create Account</button>
+        </div>
+
+        <!-- Login panel -->
+        <div class="login-panel active" id="panel-login">
+          <div class="login-error" id="login-error"></div>
+          <form id="login-form" novalidate>
+            <div class="form-group">
+              <label for="login-email">Email</label>
+              <input type="email" id="login-email" name="email" placeholder="you@example.com"
+                     autocomplete="email" required />
+            </div>
+            <div class="form-group">
+              <label for="login-password">Password</label>
+              <input type="password" id="login-password" name="password" placeholder="••••••••"
+                     autocomplete="current-password" required />
+            </div>
+            <button type="submit" class="btn btn-primary login-submit" id="login-submit-btn">
+              Sign In
+            </button>
+          </form>
+          <div class="login-divider">
+            Don't have an account? <button class="btn btn-ghost btn-sm" id="switch-to-register"
+              style="display:inline;padding:0;border:none;font-size:inherit;color:var(--color-primary);">
+              Create one
+            </button>
+          </div>
+        </div>
+
+        <!-- Register panel -->
+        <div class="login-panel" id="panel-register">
+          <div class="login-error" id="register-error"></div>
+          <form id="register-form" novalidate>
+            <div class="form-group">
+              <label for="reg-email">Email</label>
+              <input type="email" id="reg-email" name="email" placeholder="you@example.com"
+                     autocomplete="email" required />
+            </div>
+            <div class="form-group">
+              <label for="reg-username">Username</label>
+              <input type="text" id="reg-username" name="username" placeholder="DragonSlayer42"
+                     autocomplete="username" minlength="2" maxlength="30" required />
+              <div class="form-hint">2–30 characters. Shown in the app.</div>
+            </div>
+            <div class="form-group">
+              <label for="reg-password">Password</label>
+              <input type="password" id="reg-password" name="password" placeholder="Min. 6 characters"
+                     autocomplete="new-password" minlength="6" required />
+            </div>
+            <button type="submit" class="btn btn-primary login-submit" id="register-submit-btn">
+              Create Account
+            </button>
+          </form>
+          <div class="login-divider">
+            Already have an account? <button class="btn btn-ghost btn-sm" id="switch-to-login"
+              style="display:inline;padding:0;border:none;font-size:inherit;color:var(--color-primary);">
+              Sign in
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script type="module">
+  // ── Tab switching ──────────────────────────────────────────
+  function showTab(name) {
+    document.getElementById('tab-login').classList.toggle('active', name === 'login');
+    document.getElementById('tab-register').classList.toggle('active', name === 'register');
+    document.getElementById('panel-login').classList.toggle('active', name === 'login');
+    document.getElementById('panel-register').classList.toggle('active', name === 'register');
+  }
+
+  document.getElementById('tab-login').addEventListener('click', () => showTab('login'));
+  document.getElementById('tab-register').addEventListener('click', () => showTab('register'));
+  document.getElementById('switch-to-register').addEventListener('click', () => showTab('register'));
+  document.getElementById('switch-to-login').addEventListener('click', () => showTab('login'));
+
+  // ── Error display ──────────────────────────────────────────
+  function showError(id, message) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = message;
+    el.classList.add('visible');
+  }
+
+  function clearError(id) {
+    const el = document.getElementById(id);
+    if (el) el.classList.remove('visible');
+  }
+
+  function setLoading(btn, loading) {
+    if (loading) {
+      btn.disabled = true;
+      btn.dataset.originalText = btn.textContent;
+      btn.innerHTML = '<span class="spinner"></span> Please wait…';
+    } else {
+      btn.disabled = false;
+      btn.textContent = btn.dataset.originalText || btn.textContent;
+    }
+  }
+
+  // ── If already logged in, redirect ─────────────────────────
+  fetch('/api/auth/me', { credentials: 'include' })
+    .then(r => { if (r.ok) window.location.href = '/index.html'; })
+    .catch(() => {}); // ignore — user is not logged in
+
+  // ── Login form ─────────────────────────────────────────────
+  document.getElementById('login-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    clearError('login-error');
+
+    const email    = document.getElementById('login-email').value.trim();
+    const password = document.getElementById('login-password').value;
+    const btn      = document.getElementById('login-submit-btn');
+
+    if (!email || !password) {
+      showError('login-error', 'Please fill in all fields.');
+      return;
+    }
+
+    setLoading(btn, true);
+    try {
+      const resp = await fetch('/api/auth/login', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await resp.json();
+
+      if (!resp.ok) {
+        showError('login-error', data.error || 'Login failed. Please try again.');
+        return;
+      }
+
+      window.location.href = '/index.html';
+    } catch {
+      showError('login-error', 'Network error. Please check your connection and try again.');
+    } finally {
+      setLoading(btn, false);
+    }
+  });
+
+  // ── Register form ──────────────────────────────────────────
+  document.getElementById('register-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    clearError('register-error');
+
+    const email    = document.getElementById('reg-email').value.trim();
+    const username = document.getElementById('reg-username').value.trim();
+    const password = document.getElementById('reg-password').value;
+    const btn      = document.getElementById('register-submit-btn');
+
+    if (!email || !username || !password) {
+      showError('register-error', 'Please fill in all fields.');
+      return;
+    }
+    if (password.length < 6) {
+      showError('register-error', 'Password must be at least 6 characters.');
+      return;
+    }
+
+    setLoading(btn, true);
+    try {
+      const resp = await fetch('/api/auth/register', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, username, password }),
+      });
+
+      const data = await resp.json();
+
+      if (!resp.ok) {
+        showError('register-error', data.error || 'Registration failed. Please try again.');
+        return;
+      }
+
+      window.location.href = '/index.html';
+    } catch {
+      showError('register-error', 'Network error. Please check your connection and try again.');
+    } finally {
+      setLoading(btn, false);
+    }
+  });
+</script>
+
+</body>
+</html>

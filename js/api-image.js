@@ -13,15 +13,16 @@
  */
 
 import { getGeminiKey } from './api-gemini.js';
+import { getSettings, saveSettings } from './settings.js';
 
 const POLLINATIONS_BASE     = 'https://image.pollinations.ai/prompt';
 const GEMINI_IMAGE_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 const HF_INFERENCE_BASE     = 'https://router.huggingface.co/hf-inference/models';
 
-// ── HuggingFace key storage ───────────────────────────────────
+// ── HuggingFace key management ────────────────────────────────
 
-export function getHFKey()      { return localStorage.getItem('hf_api_key') || ''; }
-export function setHFKey(key)   { localStorage.setItem('hf_api_key', key); }
+export function getHFKey()    { return getSettings().hf_api_key || ''; }
+export function setHFKey(key) { saveSettings({ hf_api_key: key }); }
 
 // ── Model registry ─────────────────────────────────────────────
 
@@ -37,7 +38,7 @@ export const IMAGE_MODELS = [
 const DEFAULT_IMAGE_MODEL = 'pollinations';
 
 export function getImageModel() {
-  const stored = localStorage.getItem('image_model');
+  const stored = getSettings().image_model;
   // Migrate deprecated Imagen 3 model IDs to Imagen 4 equivalents
   if (stored === 'imagen-3.0-generate-002')      return 'imagen-4.0-generate-001';
   if (stored === 'imagen-3.0-fast-generate-001') return 'imagen-4.0-fast-generate-001';
@@ -45,7 +46,7 @@ export function getImageModel() {
 }
 
 export function setImageModel(modelId) {
-  localStorage.setItem('image_model', modelId);
+  saveSettings({ image_model: modelId });
 }
 
 // ── Core image generation ─────────────────────────────────────

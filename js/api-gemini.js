@@ -2,7 +2,8 @@
  * api-gemini.js — Google Gemini API wrapper.
  *
  * Uses the free Gemini Flash model via the REST API.
- * API key is stored in localStorage and set via the Settings modal.
+ * API key and model preference are stored server-side per user
+ * via the settings module (loaded into memory after login).
  *
  * Usage:
  *   import { geminiChat, geminiGenerate, setGeminiKey } from './api-gemini.js';
@@ -10,6 +11,9 @@
  *   const text = await geminiGenerate('Write a short DND tavern description.');
  *   const reply = await geminiChat(history, systemPrompt);
  */
+
+import { getSettings, saveSettings } from './settings.js';
+
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 /** Available models the user can choose from. */
@@ -26,19 +30,19 @@ const DEFAULT_GEMINI_MODEL = 'gemini-3.1-flash-lite-preview';
 // ── Key management ────────────────────────────────────────────
 
 /**
- * Get the stored Gemini API key.
+ * Get the stored Gemini API key from the in-memory settings store.
  * @returns {string}
  */
 export function getGeminiKey() {
-  return localStorage.getItem('gemini_api_key') || '';
+  return getSettings().gemini_api_key || '';
 }
 
 /**
- * Set and persist the Gemini API key.
+ * Set the Gemini API key in memory and persist to server.
  * @param {string} key
  */
 export function setGeminiKey(key) {
-  localStorage.setItem('gemini_api_key', key.trim());
+  saveSettings({ gemini_api_key: key.trim() });
 }
 
 /**
@@ -52,19 +56,19 @@ export function hasGeminiKey() {
 // ── Model management ──────────────────────────────────────────
 
 /**
- * Get the currently selected Gemini model ID.
+ * Get the currently selected Gemini model ID from in-memory settings.
  * @returns {string}
  */
 export function getGeminiModel() {
-  return localStorage.getItem('gemini_model') || DEFAULT_GEMINI_MODEL;
+  return getSettings().gemini_model || DEFAULT_GEMINI_MODEL;
 }
 
 /**
- * Persist the selected Gemini model ID.
+ * Persist the selected Gemini model ID to memory and server.
  * @param {string} modelId
  */
 export function setGeminiModel(modelId) {
-  localStorage.setItem('gemini_model', modelId);
+  saveSettings({ gemini_model: modelId });
 }
 
 // ── Core API call ─────────────────────────────────────────────

@@ -567,6 +567,7 @@
 </div>
 
 <script type="module">
+import { initPage } from './js/auth.js';
 import { initCommonUI } from './js/app.js';
 import {
   getActiveStory, getStory, saveStory, getCharacter, getItem,
@@ -575,15 +576,18 @@ import { showToast, getModifier, formatModifier } from './js/utils.js';
 import { sendDMMessage } from './js/dm-engine.js';
 import { generateImage } from './js/api-image.js';
 
-initCommonUI();
-
 // ── State ─────────────────────────────────────────────────────
 let activeStory    = null;
 let dmTyping       = false;
 let typingEl       = null;
 
 // ── Boot ──────────────────────────────────────────────────────
-boot();
+(async () => {
+  const user = await initPage();
+  if (!user) return;
+  initCommonUI();
+  boot();
+})();
 
 async function boot() {
   activeStory = getActiveStory();

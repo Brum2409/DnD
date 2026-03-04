@@ -11,7 +11,7 @@
  *   const b64  = await generateIconBase64('Flaming sword, legendary weapon');
  */
 
-const POLLINATIONS_BASE = 'https://image.pollinations.ai/prompt';
+const POLLINATIONS_BASE = 'https://gen.pollinations.ai/image';
 
 // ── Core image generation ─────────────────────────────────────
 

@@ -18,6 +18,11 @@ export default async function handler(req, res) {
     return sendError(res, 401, 'Unauthorized');
   }
 
+  if (!process.env.DATABASE_URL) {
+    console.error('[me] DATABASE_URL environment variable is not set.');
+    return sendError(res, 503, 'Service not configured. Please contact the administrator.');
+  }
+
   try {
     await ensureSchema();
 

@@ -11,6 +11,15 @@ import { setAuthCookie, sendError } from '../_lib/auth.js';
 export default async function handler(req, res) {
   if (req.method !== 'POST') return sendError(res, 405, 'Method not allowed');
 
+  if (!process.env.DATABASE_URL) {
+    console.error('[register] DATABASE_URL environment variable is not set.');
+    return sendError(res, 503, 'Service not configured. Please contact the administrator.');
+  }
+  if (!process.env.JWT_SECRET) {
+    console.error('[register] JWT_SECRET environment variable is not set.');
+    return sendError(res, 503, 'Service not configured. Please contact the administrator.');
+  }
+
   try {
     await ensureSchema();
 

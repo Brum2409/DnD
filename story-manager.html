@@ -704,7 +704,7 @@ function showWizardStep(n) {
 
 function populateCharCheckGrid() {
   const grid = document.getElementById('char-check-grid');
-  const chars = getAllCharacters();
+  const chars = getAllCharacters().filter(ch => !ch.isNPC);
   document.getElementById('no-chars-notice').style.display = chars.length ? 'none' : '';
   grid.innerHTML = chars.map(ch => `
     <label class="char-check-card" for="cc-${ch.id}">

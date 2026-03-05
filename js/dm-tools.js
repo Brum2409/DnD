@@ -419,6 +419,21 @@ export const DM_TOOLS = {
 
     if (storyId) {
       db.addNPCToStory(storyId, npc.id);
+
+      // Add NPC to the current scene's npcs[] and record lastSceneId
+      const story = db.getStory(storyId);
+      if (story) {
+        const currentScene = story.scenes[story.currentSceneIndex];
+        if (currentScene) {
+          if (!currentScene.npcs) currentScene.npcs = [];
+          if (!currentScene.npcs.includes(npc.id)) {
+            currentScene.npcs.push(npc.id);
+          }
+          db.saveStory(story);
+          npc.lastSceneId = currentScene.id;
+          db.saveCharacter(npc);
+        }
+      }
     }
 
     const portraitPrompt = `${name}, ${race} ${role}, DND fantasy character portrait, ${appearance || 'dramatic lighting'}, detailed face, dark fantasy art, circular portrait`;

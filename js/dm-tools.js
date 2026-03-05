@@ -1,13 +1,18 @@
 /**
  * dm-tools.js — Agentic DM tool implementations.
  *
- * Each tool is a function: (params, db) => result  (sync)
- *                       or: (params, db, gemini, imageApi) => Promise<result>  (async)
+ * Each tool is a function: (params) => result  (sync)
+ *                       or: (params) => Promise<result>  (async)
  *
- * The DM calls these by embedding JSON in its response wrapped in markers:
+ * The DM embeds tool calls in its response using markers:
  *   <!-- TOOL_CALL -->
  *   {"tool":"modify_hp","characterId":"...","delta":-5,"reason":"Goblin stab"}
  *   <!-- /TOOL_CALL -->
+ *
+ * The engine runs an AGENTIC LOOP:
+ *   1. DM response → parse tool calls → execute → feed results back to DM
+ *   2. DM can continue (more tool calls or final narration)
+ *   3. Loop until no tool calls remain (max 6 iterations)
  */
 
 import * as db from './db.js';
@@ -33,6 +38,42 @@ async function generateNPCPortraitAsync(npcId, prompt) {
 // ── Tool definitions ──────────────────────────────────────────
 
 export const DM_TOOLS = {
+
+  // ─── DICE TOOL ─────────────────────────────────────────────
+
+  /**
+   * Roll dice using standard notation (e.g. "1d20+5", "2d6", "d8-1").
+   * Always call this BEFORE narrating the outcome — the DM engine feeds
+   * the result back so you can write accurate narrative.
+   */
+  roll_dice(params) {
+    const notation = String(params.notation || params.dice || '1d20').trim().toLowerCase();
+    const match = notation.match(/^(\d*)d(\d+)([+-]\d+)?$/);
+    if (!match) {
+      return { error: `Invalid dice notation: "${notation}". Use format like "1d20", "2d6+3", "d8-1"` };
+    }
+
+    const count    = Math.min(parseInt(match[1] || '1', 10), 20); // cap at 20 dice
+    const sides    = parseInt(match[2], 10);
+    const modifier = parseInt(match[3] || '0', 10);
+
+    if (sides < 2 || sides > 1000) return { error: `Invalid die size: d${sides}` };
+
+    const rolls  = Array.from({ length: count }, () => Math.floor(Math.random() * sides) + 1);
+    const sum    = rolls.reduce((a, b) => a + b, 0);
+    const total  = sum + modifier;
+
+    return {
+      notation,
+      rolls,
+      sum,
+      modifier,
+      total,
+      reason:     params.reason || '',
+      isCrit:     sides === 20 && count === 1 && rolls[0] === 20,
+      isCritFail: sides === 20 && count === 1 && rolls[0] === 1,
+    };
+  },
 
   // ─── READ tools ────────────────────────────────────────────
 
@@ -265,6 +306,65 @@ export const DM_TOOLS = {
   },
 };
 
+// ── Agentic re-prompt formatter ───────────────────────────────
+
+/**
+ * Format tool results into a concise, machine-readable summary that is
+ * injected back into the DM's context after each agentic iteration.
+ * The DM reads this to learn what actually happened (dice rolls, HP changes, etc.)
+ * and can then make additional tool calls or write its final narration.
+ *
+ * @param {Array<{tool:string, params:Object, result:any}>} toolResults
+ * @returns {string}
+ */
+export function formatToolResultsForRePrompt(toolResults) {
+  if (!toolResults.length) return '(no tools executed)';
+  return toolResults.map(({ tool, params, result }) => {
+    if (result?.error) return `❌ ${tool} FAILED: ${result.error}`;
+
+    switch (tool) {
+      case 'roll_dice': {
+        const mod = result.modifier !== 0
+          ? (result.modifier > 0 ? `+${result.modifier}` : `${result.modifier}`)
+          : '';
+        const rollStr = result.rolls.length > 1
+          ? `[${result.rolls.join(', ')}] sum ${result.sum}${mod}`
+          : `${result.rolls[0]}${mod}`;
+        const flag = result.isCrit ? ' ⚡ CRITICAL HIT!' : result.isCritFail ? ' 💀 CRITICAL FAIL!' : '';
+        return `🎲 roll_dice(${result.notation}${result.reason ? ' — ' + result.reason : ''}): ${rollStr} = TOTAL **${result.total}**${flag}`;
+      }
+      case 'create_item':
+        return `✅ create_item: Item "${result.item?.name}" created. itemId="${result.itemId}" — use this exact ID in your next add_item call`;
+      case 'introduce_npc':
+        return `✅ introduce_npc: NPC "${result.npc?.name}" created. npcId="${result.npcId}" — use this ID in npc_speak calls`;
+      case 'modify_hp':
+        return `✅ modify_hp: HP updated → ${result.newHp}/${result.maxHp}${result.isDead ? ' — CHARACTER IS DOWN (0 HP)' : ''}`;
+      case 'add_item':
+        return `✅ add_item: "${result.itemName}" added to inventory`;
+      case 'remove_item':
+        return `✅ remove_item: "${result.itemName}" removed from inventory`;
+      case 'modify_gold':
+        return `✅ modify_gold: Gold updated → ${result.newGold} gp (${result.delta >= 0 ? '+' : ''}${result.delta})`;
+      case 'add_condition':
+        return `✅ add_condition: Active conditions → [${(result.conditions || []).join(', ') || 'none'}]`;
+      case 'remove_condition':
+        return `✅ remove_condition: Active conditions → [${(result.conditions || []).join(', ') || 'none'}]`;
+      case 'get_character_stats':
+        return `ℹ️ get_character_stats: HP ${result.hp}/${result.maxHp} | AC ${result.ac} | Gold ${result.gold} gp | Conditions: [${(result.conditions || []).join(', ') || 'none'}]`;
+      case 'get_character_inventory':
+        return `ℹ️ get_character_inventory: ${Array.isArray(result) ? (result.map(i => `${i.name} ×${i.quantity}`).join(', ') || 'empty') : JSON.stringify(result)}`;
+      case 'advance_scene':
+        return `✅ advance_scene: New scene started (sceneId="${result.newSceneId}")`;
+      case 'npc_speak':
+        return `✅ npc_speak: Dialogue recorded for "${result.npcName}"`;
+      case 'log_event':
+        return `✅ log_event: Adventure log updated`;
+      default:
+        return `✅ ${tool}: ${JSON.stringify(result).slice(0, 120)}`;
+    }
+  }).join('\n');
+}
+
 // ── Tool executor ─────────────────────────────────────────────
 
 /**
@@ -306,6 +406,11 @@ export function toolResultSummary(tool, params, result) {
   };
 
   switch (tool) {
+    case 'roll_dice': {
+      const flag = result.isCrit ? ' ⚡ Critical!' : result.isCritFail ? ' 💀 Fumble!' : '';
+      const label = params.reason ? ` (${params.reason})` : '';
+      return `🎲 Dice ${result.notation}${label}: **${result.total}**${flag}`;
+    }
     case 'modify_hp': {
       const name = charName();
       const arrow = params.delta < 0 ? 'takes' : 'heals';

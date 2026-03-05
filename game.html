@@ -1243,8 +1243,8 @@ document.getElementById('regen-scene-btn').addEventListener('click', async () =>
 
   const shimmer = document.getElementById('scene-shimmer');
   const img     = document.getElementById('scene-img');
-  shimmer.style.display = '';
-  img.style.display = 'none';
+  img.classList.remove('loaded');
+  shimmer.classList.remove('hidden-shimmer');
 
   try {
     const prompt = (scene.imagePrompt || scene.description || activeStory.setting || 'fantasy adventure scene')
@@ -1263,7 +1263,7 @@ document.getElementById('regen-scene-btn').addEventListener('click', async () =>
     showToast('New scene image generated!', 'success');
   } catch (err) {
     showToast('Image generation failed.', 'error');
-    shimmer.style.display = 'none';
+    shimmer.classList.add('hidden-shimmer');
   } finally {
     btn.textContent = '🎲 Regenerate Image';
     btn.disabled = false;

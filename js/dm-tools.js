@@ -643,25 +643,44 @@ export function formatToolResultsForRePrompt(toolResults) {
 
 /**
  * Execute an array of tool calls parsed from the DM response.
- * Handles the case where create_item and add_item appear in the same batch:
- * the DM can't know the UUID before create_item runs, so if add_item references
- * an itemId that doesn't exist in cache we substitute the most recently created
- * item's real ID.
+ *
+ * Dependency resolution — the DM can't know generated UUIDs before tools run,
+ * so it sometimes uses placeholder IDs.  We fix this in two ways:
+ *
+ *  1. Same-batch:  if create_item and add_item (or introduce_npc and npc_speak)
+ *     appear in the same turn, the producer runs first (sequential for-loop),
+ *     then the consumer's ID is patched before it executes.
+ *
+ *  2. Cross-iteration: an optional sessionContext object (created once per
+ *     sendDMMessage call and passed here each iteration) remembers the IDs from
+ *     the most recent produce-tools so a stale/wrong ID in a later turn still
+ *     resolves correctly — without any extra Gemini API calls.
+ *
  * @param {Object[]} toolCalls
+ * @param {{ lastCreatedItemId: string|null, lastIntroducedNpcId: string|null }|null} sessionContext
  * @returns {Promise<Array<{tool:string, params:Object, result:any}>>}
  */
-export async function executeDMTools(toolCalls) {
+export async function executeDMTools(toolCalls, sessionContext = null) {
   const results = [];
-  // Track item IDs created in this batch so we can patch same-batch add_item calls
-  let lastCreatedItemId = null;
+
+  // Seed from cross-iteration context (may be null on first iteration)
+  let lastCreatedItemId  = sessionContext?.lastCreatedItemId  ?? null;
+  let lastIntroducedNpcId = sessionContext?.lastIntroducedNpcId ?? null;
 
   for (const call of toolCalls) {
-    // If add_item references an itemId not in cache, substitute the last created
-    // item from this same batch (handles DM writing both calls in one turn)
-    if (call.tool === 'add_item' && call.itemId && lastCreatedItemId) {
+    // ── Resolve add_item / remove_item → create_item dependency ──
+    if ((call.tool === 'add_item' || call.tool === 'remove_item') && call.itemId && lastCreatedItemId) {
       if (!db.getItem(call.itemId)) {
-        console.warn(`[dm-tools] add_item: itemId "${call.itemId}" not in cache — substituting last created item "${lastCreatedItemId}"`);
+        console.warn(`[dm-tools] ${call.tool}: itemId "${call.itemId}" not in cache — substituting last created item "${lastCreatedItemId}"`);
         call.itemId = lastCreatedItemId;
+      }
+    }
+
+    // ── Resolve npc_speak → introduce_npc dependency ─────────────
+    if (call.tool === 'npc_speak' && call.npcId && lastIntroducedNpcId) {
+      if (!db.getCharacter(call.npcId)) {
+        console.warn(`[dm-tools] npc_speak: npcId "${call.npcId}" not in cache — substituting last introduced NPC "${lastIntroducedNpcId}"`);
+        call.npcId = lastIntroducedNpcId;
       }
     }
 
@@ -672,9 +691,17 @@ export async function executeDMTools(toolCalls) {
     }
     try {
       const result = await fn(call);
+
+      // Track produced IDs for downstream resolution (same-batch and cross-iteration)
       if (call.tool === 'create_item' && result.itemId && !result.error) {
         lastCreatedItemId = result.itemId;
+        if (sessionContext) sessionContext.lastCreatedItemId = result.itemId;
       }
+      if (call.tool === 'introduce_npc' && result.npcId && !result.error) {
+        lastIntroducedNpcId = result.npcId;
+        if (sessionContext) sessionContext.lastIntroducedNpcId = result.npcId;
+      }
+
       results.push({ tool: call.tool, params: call, result });
     } catch (err) {
       results.push({ tool: call.tool, params: call, result: { error: err.message } });

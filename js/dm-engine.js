@@ -410,6 +410,11 @@ export async function sendDMMessage(storyId, userMessage, onProgress = null) {
   let   sceneAdvance          = null;
   let   historyCompressed     = false;
 
+  // Shared context passed to every executeDMTools call so that IDs produced by
+  // create_item / introduce_npc in one iteration are available to consumers
+  // (add_item / npc_speak) in later iterations without extra Gemini API calls.
+  const sessionContext = { lastCreatedItemId: null, lastIntroducedNpcId: null };
+
   for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
     // Call the DM
     let rawResponse;
@@ -442,7 +447,7 @@ export async function sendDMMessage(storyId, userMessage, onProgress = null) {
     }
 
     // Execute all tool calls for this iteration
-    const iterationResults = await executeDMTools(toolCalls);
+    const iterationResults = await executeDMTools(toolCalls, sessionContext);
     allToolCallsExecuted.push(...iterationResults);
 
     // Emit each tool result summary live so the UI can show badges immediately

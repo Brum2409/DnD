@@ -1118,6 +1118,12 @@ function hideTypingIndicator() {
   if (typingEl) { typingEl.remove(); typingEl = null; }
 }
 
+function updateTypingStatus(message) {
+  if (!typingEl) return;
+  const label = typingEl.querySelector('.typing-label');
+  if (label) label.textContent = message;
+}
+
 function scrollChatBottom(smooth = true) {
   const container = document.getElementById('chat-history');
   if (smooth) {
@@ -1186,8 +1192,24 @@ async function handleSend(overrideMessage) {
 
   showTypingIndicator();
 
+  // Track whether live tool badges were already appended via the progress callback
+  let liveToolBadgesShown = false;
+
   try {
-    const result = await sendDMMessage(activeStory.id, message);
+    const result = await sendDMMessage(activeStory.id, message, (progress) => {
+      if (progress.type === 'status') {
+        // Update the typing indicator to show what the DM is doing right now
+        updateTypingStatus(progress.message + '…');
+      } else if (progress.type === 'tool_result' && progress.summary) {
+        // Insert the tool badge immediately — player sees each action as it happens
+        // The typing indicator moves below it so new badges stack above the dots
+        hideTypingIndicator();
+        appendToolBadge(progress.summary);
+        showTypingIndicator();
+        scrollChatBottom();
+        liveToolBadgesShown = true;
+      }
+    });
 
     hideTypingIndicator();
 
@@ -1206,10 +1228,12 @@ async function handleSend(overrideMessage) {
       showToast('Session history compressed to save context.', 'info');
     }
 
-    // Show tool badges BEFORE DM response
-    result.toolSummaries.forEach(summary => {
-      appendToolBadge(summary);
-    });
+    // Tool badges were already appended live via the callback — only fall back
+    // to batch rendering if the callback was never triggered (e.g., no tools used
+    // on first response, or older call path)
+    if (!liveToolBadgesShown) {
+      result.toolSummaries.forEach(summary => appendToolBadge(summary));
+    }
 
     // Show DM response
     appendMessageEl('assistant', result.cleanResponse);

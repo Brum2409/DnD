@@ -275,6 +275,89 @@ export function stripToolCalls(responseText) {
 // ── Main DM Message Handler ───────────────────────────────────
 
 /**
+ * Build a human-readable status line describing pending tool calls,
+ * shown to the player BEFORE the tools are executed.
+ * @param {Object[]} toolCalls
+ * @returns {string}
+ */
+function buildToolCallStatusMessage(toolCalls) {
+  const msgs = toolCalls.map(tc => {
+    switch (tc.tool) {
+      case 'roll_dice':
+        return `🎲 Rolling ${tc.notation}${tc.reason ? ` — ${tc.reason}` : ''}`;
+      case 'modify_hp': {
+        const ch = getCharacter(tc.characterId);
+        const n  = ch?.name || 'someone';
+        return tc.delta < 0
+          ? `⚔️ Dealing ${Math.abs(tc.delta)} damage to ${n}`
+          : `❤️ Healing ${n} for ${tc.delta} HP`;
+      }
+      case 'modify_xp': {
+        const ch = getCharacter(tc.characterId);
+        return `⭐ Awarding XP to ${ch?.name || 'the party'}`;
+      }
+      case 'modify_gold': {
+        const ch = getCharacter(tc.characterId);
+        return `💰 Updating ${ch?.name || 'character'}'s gold`;
+      }
+      case 'add_condition': {
+        const ch = getCharacter(tc.characterId);
+        return `⚠️ Adding ${tc.condition} to ${ch?.name || 'character'}`;
+      }
+      case 'remove_condition': {
+        const ch = getCharacter(tc.characterId);
+        return `✅ Removing ${tc.condition} from ${ch?.name || 'character'}`;
+      }
+      case 'introduce_npc':
+        return `🎭 Introducing ${tc.name}`;
+      case 'npc_speak': {
+        const name = tc.npcName
+          || (tc.npcId ? getCharacter(tc.npcId)?.name : null)
+          || 'NPC';
+        return `💬 ${name} speaks`;
+      }
+      case 'advance_scene':
+        return `🗺️ New scene: ${tc.newSceneTitle}`;
+      case 'create_item':
+        return `📦 Creating ${tc.name}`;
+      case 'add_item': {
+        const ch = getCharacter(tc.characterId);
+        return `🎒 Adding item to ${ch?.name || 'character'}`;
+      }
+      case 'remove_item': {
+        const ch = getCharacter(tc.characterId);
+        return `🗑️ Removing item from ${ch?.name || 'character'}`;
+      }
+      case 'get_full_character':
+      case 'get_character_stats':
+      case 'get_character_inventory': {
+        const ch = getCharacter(tc.characterId);
+        return `📋 Reading ${ch?.name || 'character'} sheet`;
+      }
+      case 'get_npc_details':
+        return `📋 Reading NPC details`;
+      case 'get_adventure_log': {
+        const ch = getCharacter(tc.characterId);
+        return `📜 Reading ${ch?.name || 'character'}'s log`;
+      }
+      case 'get_scene_history':
+        return `🗺️ Reading scene history`;
+      case 'log_event': {
+        const ch = getCharacter(tc.characterId);
+        return `📝 Logging event for ${ch?.name || 'character'}`;
+      }
+      case 'set_npc_stat':
+        return `🎭 Updating NPC stats`;
+      case 'compress_history':
+        return `📜 Compressing history`;
+      default:
+        return null;
+    }
+  }).filter(Boolean);
+  return msgs.join(' · ');
+}
+
+/**
  * Send a player message to the AI DM and return its response + any tool effects.
  *
  * Uses an AGENTIC LOOP: after the DM makes tool calls the engine executes them,
@@ -283,6 +366,9 @@ export function stripToolCalls(responseText) {
  *
  * @param {string} storyId
  * @param {string} userMessage
+ * @param {Function|null} onProgress  - optional callback(event) for live UI updates.
+ *   event = { type: 'status', message: string }   — DM is about to do something
+ *   event = { type: 'tool_result', summary: string } — a tool finished executing
  * @returns {Promise<{
  *   dmResponse: string,
  *   cleanResponse: string,
@@ -295,7 +381,7 @@ export function stripToolCalls(responseText) {
  *   historyCompressed: boolean,
  * }>}
  */
-export async function sendDMMessage(storyId, userMessage) {
+export async function sendDMMessage(storyId, userMessage, onProgress = null) {
   // ── 1. Load world state ──────────────────────────────────────
   const story = getStory(storyId);
   if (!story) throw new Error('Story not found: ' + storyId);
@@ -347,9 +433,23 @@ export async function sendDMMessage(storyId, userMessage) {
     // If no tool calls this turn, the DM is done
     if (toolCalls.length === 0) break;
 
+    // Notify UI of what the DM is about to do
+    if (onProgress) {
+      const statusMsg = buildToolCallStatusMessage(toolCalls);
+      if (statusMsg) onProgress({ type: 'status', message: statusMsg });
+    }
+
     // Execute all tool calls for this iteration
     const iterationResults = await executeDMTools(toolCalls);
     allToolCallsExecuted.push(...iterationResults);
+
+    // Emit each tool result summary live so the UI can show badges immediately
+    if (onProgress) {
+      for (const r of iterationResults) {
+        const summary = toolResultSummary(r.tool, r.params, r.result);
+        if (summary) onProgress({ type: 'tool_result', summary });
+      }
+    }
 
     // Track first scene advancement
     if (!sceneAdvance) {

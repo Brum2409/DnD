@@ -360,6 +360,7 @@ import {
   getAllCharacters, getCharacter, saveCharacter, deleteCharacter,
   getAllItems, getItem, saveItem,
   updateCharacterHP, updateCharacterInventory, addToAdventureLog,
+  getSpell,
 } from './js/db.js';
 import {
   uuid, getModifier, formatModifier, getProficiencyBonus, xpForLevel,
@@ -586,6 +587,7 @@ function renderDetail() {
         <button class="tab-btn ${activeTab==='inventory' ?'active':''}" data-tab="inventory" role="tab">🎒 Inventory (${(char.inventory??[]).length})</button>
         <button class="tab-btn ${activeTab==='log'       ?'active':''}" data-tab="log"       role="tab">📜 Log (${(char.adventureLog??[]).length})</button>
         <button class="tab-btn ${activeTab==='skills'    ?'active':''}" data-tab="skills"    role="tab">⚔️ Skills</button>
+        ${(char.spellSlots || (char.spells||[]).length > 0) ? `<button class="tab-btn ${activeTab==='spells'?'active':''}" data-tab="spells" role="tab">✨ Spells (${(char.spells||[]).length})</button>` : ''}
       </div>
 
       <!-- ── Tab panels ── -->
@@ -593,6 +595,7 @@ function renderDetail() {
       <div class="tab-panel ${activeTab==='inventory' ?'active':''}" id="tab-inventory">${inventoryTabHtml(char)}</div>
       <div class="tab-panel ${activeTab==='log'       ?'active':''}" id="tab-log"      >${logTabHtml(char)}</div>
       <div class="tab-panel ${activeTab==='skills'    ?'active':''}" id="tab-skills"   >${skillsTabHtml(char)}</div>
+      <div class="tab-panel ${activeTab==='spells'    ?'active':''}" id="tab-spells"   >${spellsTabHtml(char)}</div>
     </div>
   `;
 
@@ -747,6 +750,116 @@ function skillsTabHtml(char) {
     <div style="margin-top:0.75rem;font-family:var(--font-ui);font-size:0.78rem;color:var(--color-text-faint);">
       Proficiency Bonus: +${prof} · Checked = proficient
     </div>`;
+}
+
+// ── Spells tab ────────────────────────────────────────────────
+
+const SCHOOL_COLORS_MGR = {
+  Evocation: '#e05050', Abjuration: '#5090e0', Conjuration: '#50c080',
+  Divination: '#a0c0f0', Enchantment: '#e080d0', Illusion: '#9060c0',
+  Necromancy: '#60c060', Transmutation: '#e0a030',
+};
+
+function spellsTabHtml(char) {
+  const slots      = char.spellSlots;
+  const spellIds   = char.spells || [];
+  const hasSlots   = slots && Object.keys(slots).length > 0;
+  const spellObjs  = spellIds.map(id => getSpell(id)).filter(Boolean);
+
+  if (!hasSlots && spellObjs.length === 0) {
+    return `
+      <div class="empty-state" style="padding:3rem 1rem;">
+        <div class="empty-state-icon">✨</div>
+        <div class="empty-state-title">No Magic Yet</div>
+        <div class="empty-state-text">This character has no spell slots or known spells. Spells will be granted by the DM during your adventure.</div>
+      </div>`;
+  }
+
+  // ── Spell slot section ────────────────────────────────────
+  let slotSection = '';
+  if (hasSlots) {
+    const rows = Object.entries(slots).map(([lvl, s]) => {
+      const available = s.total - s.used;
+      const pips = Array.from({ length: s.total }, (_, i) => {
+        const filled = i < available;
+        return `<span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${filled ? '#a080e0' : 'var(--color-surface-3)'};border:1px solid rgba(160,128,224,0.5);"></span>`;
+      }).join('');
+      const pactLabel = s.pactMagic ? ' <span style="font-size:0.65rem;color:#a080e0;">(Pact ✦)</span>' : '';
+      return `
+        <div style="display:flex;align-items:center;gap:0.6rem;padding:0.4rem 0;border-bottom:1px solid var(--color-border);">
+          <span style="font-family:var(--font-ui);font-size:0.8rem;color:var(--color-text-muted);min-width:64px;">Level ${escapeHtml(lvl)}${pactLabel}</span>
+          <div style="display:flex;gap:3px;flex-wrap:wrap;">${pips}</div>
+          <span style="font-family:var(--font-ui);font-size:0.75rem;color:${available > 0 ? 'var(--color-success)' : 'var(--color-danger)'};margin-left:auto;">${available}/${s.total}</span>
+        </div>`;
+    }).join('');
+    slotSection = `
+      <div class="card" style="margin-bottom:1.25rem;padding:1rem;">
+        <div style="font-family:var(--font-display);font-size:0.8rem;text-transform:uppercase;letter-spacing:0.08em;color:#a080e0;margin-bottom:0.6rem;">✦ Spell Slots</div>
+        ${rows}
+      </div>`;
+  }
+
+  // ── Known spells grouped by level ────────────────────────
+  let spellSection = '';
+  if (spellObjs.length > 0) {
+    const byLevel = {};
+    spellObjs.forEach(sp => {
+      const k = sp.level;
+      if (!byLevel[k]) byLevel[k] = [];
+      byLevel[k].push(sp);
+    });
+
+    const groups = Object.keys(byLevel).sort((a, b) => Number(a) - Number(b)).map(lvl => {
+      const label = Number(lvl) === 0 ? 'Cantrips' : `Level ${lvl} Spells`;
+      const cards = byLevel[lvl].map(sp => {
+        const col = SCHOOL_COLORS_MGR[sp.school] || '#888';
+        const icon = sp.iconBase64
+          ? `<img src="${sp.iconBase64}" style="width:36px;height:36px;border-radius:var(--radius);object-fit:cover;flex-shrink:0;border:1px solid ${col}44;" />`
+          : `<div style="width:36px;height:36px;border-radius:var(--radius);background:${col}22;border:1px solid ${col}44;display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0;">✨</div>`;
+        const dmgBadge = sp.damage
+          ? `<span style="display:inline-flex;align-items:center;gap:2px;background:rgba(224,80,80,0.12);border:1px solid rgba(224,80,80,0.3);border-radius:4px;padding:1px 6px;font-size:0.7rem;font-family:var(--font-ui);color:#e05050;font-weight:600;">⚔️ ${escapeHtml(sp.damage)} ${escapeHtml(sp.damageType)}</span>`
+          : '';
+        const concBadge = sp.concentration
+          ? `<span style="background:rgba(200,160,50,0.15);color:#c8a000;border-radius:4px;padding:1px 5px;font-size:0.65rem;font-family:var(--font-ui);">CONC</span>`
+          : '';
+        const ritualBadge = sp.ritual
+          ? `<span style="background:rgba(80,180,120,0.15);color:#50b478;border-radius:4px;padding:1px 5px;font-size:0.65rem;font-family:var(--font-ui);">RITUAL</span>`
+          : '';
+        const saveBadge = sp.savingThrow
+          ? `<span style="background:rgba(80,144,224,0.12);color:#5090e0;border-radius:4px;padding:1px 5px;font-size:0.65rem;font-family:var(--font-ui);">Save: ${escapeHtml(sp.savingThrow)}</span>`
+          : '';
+        const detailLine = [sp.castingTime, sp.range, sp.duration].filter(Boolean).join(' · ');
+        return `
+          <div style="display:flex;gap:0.7rem;align-items:flex-start;padding:0.75rem;background:var(--color-surface-2);border:1px solid var(--color-border);border-radius:var(--radius);margin-bottom:0.5rem;">
+            ${icon}
+            <div style="flex:1;min-width:0;">
+              <div style="display:flex;align-items:center;flex-wrap:wrap;gap:0.3rem;margin-bottom:0.2rem;">
+                <span style="font-family:var(--font-ui);font-size:0.88rem;font-weight:700;">${escapeHtml(sp.name)}</span>
+                <span style="font-size:0.72rem;color:${col};">${escapeHtml(sp.school)}</span>
+                ${dmgBadge}${concBadge}${ritualBadge}${saveBadge}
+              </div>
+              ${detailLine ? `<div style="font-family:var(--font-ui);font-size:0.72rem;color:var(--color-text-faint);margin-bottom:0.3rem;">${escapeHtml(detailLine)}</div>` : ''}
+              ${sp.description ? `<div style="font-family:var(--font-body);font-size:0.8rem;color:var(--color-text-muted);line-height:1.5;">${escapeHtml(sp.description)}</div>` : ''}
+            </div>
+          </div>`;
+      }).join('');
+      return `
+        <div style="margin-bottom:1rem;">
+          <div style="font-family:var(--font-ui);font-size:0.72rem;text-transform:uppercase;letter-spacing:0.07em;color:var(--color-text-faint);margin-bottom:0.4rem;">${label}</div>
+          ${cards}
+        </div>`;
+    }).join('');
+
+    spellSection = `
+      <div>
+        <div style="font-family:var(--font-display);font-size:0.8rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--color-text-faint);margin-bottom:0.75rem;">Known Spells (${spellObjs.length})</div>
+        ${groups}
+      </div>`;
+  } else if (hasSlots) {
+    spellSection = `<p style="font-family:var(--font-ui);font-size:0.82rem;color:var(--color-text-faint);font-style:italic;">No spells learned yet — the DM will grant spells during your adventure.</p>`;
+  }
+
+  return `<div style="padding-top:1rem;">${slotSection}${spellSection}</div>`;
 }
 
 // ── Wire detail events ────────────────────────────────────────

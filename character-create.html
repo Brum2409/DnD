@@ -550,11 +550,11 @@
 <script type="module">
 import { initPage }                                    from './js/auth.js';
 import { initCommonUI }                                from './js/app.js';
-import { saveCharacter }                               from './js/db.js';
+import { saveCharacter, saveSpell }                    from './js/db.js';
 import {
   uuid, rollAbilityScore, getModifier, formatModifier,
   escapeHtml, showToast, showLoading, hideLoading,
-  capitalize, RACES, CLASSES,
+  capitalize, RACES, CLASSES, getBaseSpellSlots, CLASS_STARTING_SPELLS,
 } from './js/utils.js';
 import { geminiGenerate, hasGeminiKey }                from './js/api-gemini.js';
 import { generatePortrait as genPortraitUrl }          from './js/api-image.js';
@@ -925,6 +925,92 @@ function goToStep(n) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
+// ── Review spell section helper ────────────────────────────────
+
+const SCHOOL_COLORS_CREATE = {
+  Evocation: '#e05050', Abjuration: '#5090e0', Conjuration: '#50c080',
+  Divination: '#a0c0f0', Enchantment: '#e080d0', Illusion: '#9060c0',
+  Necromancy: '#60c060', Transmutation: '#e0a030',
+};
+
+function buildReviewSpellSection(cls, level) {
+  const slots    = getBaseSpellSlots(cls, level);
+  const spells   = CLASS_STARTING_SPELLS[cls] || [];
+  const hasSlots = slots && Object.keys(slots).length > 0;
+
+  // Non-casters get nothing
+  if (!hasSlots && spells.length === 0) return '';
+
+  // Slot summary row
+  let slotHtml = '';
+  if (hasSlots) {
+    const pips = Object.entries(slots).map(([lvl, s]) => {
+      const pipEls = Array.from({ length: s.total }, () =>
+        `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#a080e0;border:1px solid rgba(160,128,224,0.5);"></span>`
+      ).join('');
+      const label = s.pactMagic ? `L${lvl} (Pact✦)` : `L${lvl}`;
+      return `<div style="display:flex;align-items:center;gap:4px;margin-bottom:3px;">
+        <span style="font-family:var(--font-ui);font-size:0.72rem;color:var(--color-text-faint);min-width:52px;">${label}</span>
+        <div style="display:flex;gap:3px;">${pipEls}</div>
+        <span style="font-family:var(--font-ui);font-size:0.7rem;color:var(--color-text-faint);margin-left:4px;">${s.total} slot${s.total !== 1 ? 's' : ''}</span>
+      </div>`;
+    }).join('');
+    slotHtml = `
+      <div style="margin-bottom:0.85rem;">
+        <div style="font-family:var(--font-display);font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#a080e0;margin-bottom:0.4rem;">✦ Spell Slots</div>
+        ${pips}
+      </div>`;
+  }
+
+  // Filter spells: cantrips always, levelled spells only if slots exist
+  const visibleSpells = spells.filter(sp => sp.level === 0 || hasSlots);
+  let spellListHtml = '';
+  if (visibleSpells.length > 0) {
+    const cantrips  = visibleSpells.filter(sp => sp.level === 0);
+    const levelled  = visibleSpells.filter(sp => sp.level > 0);
+    const renderGroup = (label, list) => list.length === 0 ? '' : `
+      <div style="margin-bottom:0.5rem;">
+        <div style="font-family:var(--font-ui);font-size:0.65rem;text-transform:uppercase;letter-spacing:0.07em;color:var(--color-text-faint);margin-bottom:0.3rem;">${label}</div>
+        ${list.map(sp => {
+          const col = SCHOOL_COLORS_CREATE[sp.school] || '#888';
+          const dmgBadge = sp.damage
+            ? `<span style="font-size:0.65rem;color:${col};font-weight:600;margin-left:4px;">⚔️ ${escapeHtml(sp.damage)} ${escapeHtml(sp.damageType)}</span>`
+            : '';
+          const concBadge = sp.concentration
+            ? `<span style="background:rgba(200,160,50,0.15);color:#c8a000;border-radius:3px;padding:1px 4px;font-size:0.6rem;margin-left:3px;">CONC</span>`
+            : '';
+          return `<div style="display:flex;flex-direction:column;padding:0.3rem 0.4rem;background:var(--color-surface-3);border-radius:var(--radius);border:1px solid var(--color-border);margin-bottom:0.3rem;">
+            <div style="display:flex;align-items:center;flex-wrap:wrap;gap:2px;">
+              <span style="font-family:var(--font-ui);font-size:0.8rem;font-weight:600;">${escapeHtml(sp.name)}</span>
+              <span style="font-size:0.68rem;color:${col};">${escapeHtml(sp.school)}</span>
+              ${dmgBadge}${concBadge}
+            </div>
+            <div style="font-family:var(--font-body);font-size:0.7rem;color:var(--color-text-muted);margin-top:0.15rem;line-height:1.4;">
+              ${escapeHtml(sp.castingTime)} · ${escapeHtml(sp.range)} · ${escapeHtml(sp.duration)}
+            </div>
+            <div style="font-family:var(--font-body);font-size:0.7rem;color:var(--color-text-faint);margin-top:0.1rem;line-height:1.35;">
+              ${escapeHtml(sp.description.slice(0, 100))}${sp.description.length > 100 ? '…' : ''}
+            </div>
+          </div>`;
+        }).join('')}
+      </div>`;
+    spellListHtml = `
+      <div>
+        <div style="font-family:var(--font-display);font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--color-text-faint);margin-bottom:0.4rem;">Starting Spells (${visibleSpells.length})</div>
+        ${renderGroup('Cantrips', cantrips)}
+        ${renderGroup('Level 1', levelled)}
+      </div>`;
+  }
+
+  return `
+    <div style="padding:1.25rem;border-top:1px solid var(--color-border);">
+      <h4 style="font-family:var(--font-display);font-size:0.85rem;color:var(--color-primary);margin-bottom:0.75rem;">✨ Magic &amp; Spells</h4>
+      ${slotHtml}
+      ${spellListHtml}
+      ${!hasSlots && spells.length === 0 ? `<span style="font-family:var(--font-ui);font-size:0.8rem;color:var(--color-text-faint);font-style:italic;">This class has no spellcasting ability at this level.</span>` : ''}
+    </div>`;
+}
+
 // ── Review step ───────────────────────────────────────────────
 
 function renderReview() {
@@ -972,6 +1058,9 @@ function renderReview() {
         </div>
       </div>
 
+      <!-- Spell Slots & Starting Spells -->
+      ${buildReviewSpellSection(wiz.class, wiz.level)}
+
       <!-- Backstory -->
       ${wiz.backstory ? `
         <div style="padding: 1.25rem; border-top: 1px solid var(--color-border);">
@@ -1011,6 +1100,41 @@ function saveAndRedirect() {
   const hp     = calculateHP(wiz.class, scores.constitution, level);
   const ac     = 10 + getModifier(scores.dexterity);
 
+  // Initialise spell slots based on class + level
+  const spellSlots = getBaseSpellSlots(wiz.class, level);
+
+  // Save starting spells to the spell library and collect their IDs
+  const startingSpellTemplates = CLASS_STARTING_SPELLS[wiz.class] || [];
+  // Only give levelled spells if the class has spell slots at this level
+  const spellsToCreate = startingSpellTemplates.filter(sp =>
+    sp.level === 0 || spellSlots !== null
+  );
+  const spellIds = [];
+  for (const template of spellsToCreate) {
+    const spell = {
+      id:          uuid(),
+      name:        template.name,
+      level:       template.level,
+      school:      template.school,
+      castingTime: template.castingTime,
+      range:       template.range,
+      components:  template.components,
+      duration:    template.duration,
+      concentration: template.concentration,
+      ritual:      template.ritual,
+      description: template.description,
+      lore:        '',
+      iconBase64:  '',
+      iconPrompt:  '',
+      damage:      template.damage || '',
+      damageType:  template.damageType || '',
+      savingThrow: template.savingThrow || '',
+      createdAt:   Date.now(),
+    };
+    saveSpell(spell);
+    spellIds.push(spell.id);
+  }
+
   const char = {
     id:        uuid(),
     name:      wiz.name,
@@ -1035,6 +1159,8 @@ function saveAndRedirect() {
     conditions:   [],
     gold:         10,
     xp:           0,
+    spells:       spellIds,
+    spellSlots:   spellSlots,
     adventureLog: [`Created ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}.`],
     createdAt:    Date.now(),
     updatedAt:    Date.now(),

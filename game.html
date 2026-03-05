@@ -501,6 +501,61 @@
 
     /* radius-lg fallback */
     :root { --radius-lg: 10px; }
+
+    /* ── History compression divider ── */
+    .compression-divider {
+      align-self: stretch;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 0;
+    }
+    .compression-line {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      width: 100%;
+    }
+    .compression-line::before,
+    .compression-line::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: linear-gradient(to right, transparent, var(--color-border), transparent);
+    }
+    .compression-badge {
+      font-family: var(--font-ui);
+      font-size: 0.72rem;
+      color: var(--color-text-faint);
+      background: var(--color-surface-2);
+      border: 1px solid var(--color-border);
+      border-radius: 999px;
+      padding: 0.25em 0.85em;
+      white-space: nowrap;
+      cursor: pointer;
+      transition: all var(--transition);
+    }
+    .compression-badge:hover {
+      border-color: var(--color-primary-dark);
+      color: var(--color-text-muted);
+    }
+    .compression-summary-box {
+      display: none;
+      background: var(--color-surface-2);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius);
+      padding: 0.85rem 1rem;
+      font-family: var(--font-body);
+      font-size: 0.82rem;
+      line-height: 1.65;
+      color: var(--color-text-muted);
+      width: 100%;
+      max-width: 680px;
+      text-align: left;
+      white-space: pre-wrap;
+    }
+    .compression-summary-box.open { display: block; }
   </style>
 </head>
 <body>
@@ -841,6 +896,14 @@ function renderChatHistory() {
         npcRole: msg.npcRole,
         portrait: msg.portrait,
       });
+    } else if (msg.role === 'compression') {
+      appendMessageEl('compression', msg.content, {
+        summary:         msg.summary,
+        compressedCount: msg.compressedCount,
+        compressedAt:    msg.compressedAt,
+      });
+    } else if (msg.isCompressionSummary) {
+      // The summary user message is context for the AI only — skip in UI
     } else {
       appendMessageEl(msg.role, msg.content);
     }
@@ -873,6 +936,26 @@ function appendMessageEl(role, content, meta) {
         <span class="msg-npc-label">${escHtml(meta?.npcName || 'Character')}</span>${roleLabel}
       </div>
       <div class="msg-npc-bubble">"${formatMessageContent(content)}"</div>
+    `;
+  } else if (role === 'compression') {
+    el.className = 'compression-divider';
+    const count   = meta?.compressedCount || '?';
+    const dateStr = meta?.compressedAt
+      ? new Date(meta.compressedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      : '';
+    const summaryText = escHtml(meta?.summary || '');
+    const summaryId   = 'cs-' + Date.now() + Math.random().toString(36).slice(2);
+    el.innerHTML = `
+      <div class="compression-line">
+        <span class="compression-badge" onclick="
+          const box = document.getElementById('${summaryId}');
+          box.classList.toggle('open');
+          this.textContent = box.classList.contains('open')
+            ? '📜 Hide summary ▲'
+            : '📜 ${count} messages compressed${dateStr ? ' · ' + dateStr : ''} — tap to expand ▼';
+        ">📜 ${count} messages compressed${dateStr ? ' · ' + dateStr : ''} — tap to expand ▼</span>
+      </div>
+      <div class="compression-summary-box" id="${summaryId}">${summaryText}</div>
     `;
   }
 
@@ -989,6 +1072,21 @@ async function handleSend(overrideMessage) {
 
     hideTypingIndicator();
 
+    // If history was compressed, insert the compression divider into chat
+    // (reload story to get the compression marker that was persisted)
+    if (result.historyCompressed) {
+      activeStory = getStory(activeStory.id) || activeStory;
+      const compressionMsg = activeStory.dmChatHistory.find(m => m.role === 'compression');
+      if (compressionMsg) {
+        appendMessageEl('compression', compressionMsg.content, {
+          summary:         compressionMsg.summary,
+          compressedCount: compressionMsg.compressedCount,
+          compressedAt:    compressionMsg.compressedAt,
+        });
+      }
+      showToast('Session history compressed to save context.', 'info');
+    }
+
     // Show tool badges BEFORE DM response
     result.toolSummaries.forEach(summary => {
       appendToolBadge(summary);
@@ -1015,7 +1113,7 @@ async function handleSend(overrideMessage) {
     if (result.sceneAdvanced) {
       activeStory = getStory(activeStory.id) || activeStory;
       renderScene();
-      showToast('Scene advanced!', 'info');
+      showToast('Scene advances!', 'info');
     }
 
     // Check for character deaths

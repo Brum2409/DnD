@@ -12,12 +12,23 @@
  * The engine runs an AGENTIC LOOP:
  *   1. DM response → parse tool calls → execute → feed results back to DM
  *   2. DM can continue (more tool calls or final narration)
- *   3. Loop until no tool calls remain (max 6 iterations)
+ *   3. Loop until no tool calls remain (max 8 iterations)
+ *
+ * ── TOOL CATEGORIES ──────────────────────────────────────────────
+ *  DICE    roll_dice
+ *  READ    get_character_stats, get_full_character, get_character_inventory,
+ *          get_character_stat, get_npc_details, get_adventure_log,
+ *          get_scene_history
+ *  WRITE   modify_hp, modify_gold, modify_xp, add_item, remove_item,
+ *          add_condition, remove_condition, log_event, advance_scene,
+ *          create_item, set_npc_stat
+ *  NPC     introduce_npc, npc_speak
+ *  META    compress_history
  */
 
 import * as db from './db.js';
 import { geminiGenerate } from './api-gemini.js';
-import { generateIconBase64, generateImage } from './api-image.js';
+import { generateIconBase64 } from './api-image.js';
 import { uuid } from './utils.js';
 
 // ── NPC portrait generator (async, updates NPC after creation) ─
@@ -39,12 +50,12 @@ async function generateNPCPortraitAsync(npcId, prompt) {
 
 export const DM_TOOLS = {
 
-  // ─── DICE TOOL ─────────────────────────────────────────────
+  // ─── DICE ──────────────────────────────────────────────────
 
   /**
    * Roll dice using standard notation (e.g. "1d20+5", "2d6", "d8-1").
-   * Always call this BEFORE narrating the outcome — the DM engine feeds
-   * the result back so you can write accurate narrative.
+   * Always call this BEFORE narrating the outcome — the engine feeds
+   * the real result back so you can write accurate narrative.
    */
   roll_dice(params) {
     const notation = String(params.notation || params.dice || '1d20').trim().toLowerCase();
@@ -53,7 +64,7 @@ export const DM_TOOLS = {
       return { error: `Invalid dice notation: "${notation}". Use format like "1d20", "2d6+3", "d8-1"` };
     }
 
-    const count    = Math.min(parseInt(match[1] || '1', 10), 20); // cap at 20 dice
+    const count    = Math.min(parseInt(match[1] || '1', 10), 20);
     const sides    = parseInt(match[2], 10);
     const modifier = parseInt(match[3] || '0', 10);
 
@@ -77,18 +88,59 @@ export const DM_TOOLS = {
 
   // ─── READ tools ────────────────────────────────────────────
 
+  /** Quick stats snapshot — HP, AC, gold, conditions. */
   get_character_stats(params) {
     const char = db.getCharacter(params.characterId);
     if (!char) return { error: 'Character not found' };
     return {
-      hp: char.stats.hp,
-      maxHp: char.stats.maxHp,
-      ac: char.stats.ac,
+      name:       char.name,
+      hp:         char.stats.hp,
+      maxHp:      char.stats.maxHp,
+      ac:         char.stats.ac,
       conditions: char.conditions,
-      gold: char.gold,
+      gold:       char.gold,
+      xp:         char.xp,
     };
   },
 
+  /**
+   * Full character sheet — ability scores, skills, inventory, backstory,
+   * adventure log. Use when you need deeper context about a character.
+   */
+  get_full_character(params) {
+    const char = db.getCharacter(params.characterId);
+    if (!char) return { error: 'Character not found' };
+    const inv = char.inventory.map(inst => {
+      const item = db.getItem(inst.itemId);
+      return item
+        ? { name: item.name, type: item.type, rarity: item.rarity, quantity: inst.quantity, stats: item.stats }
+        : { name: 'Unknown item', quantity: inst.quantity };
+    });
+    return {
+      name:         char.name,
+      race:         char.race,
+      class:        char.class,
+      level:        char.level,
+      hp:           char.stats.hp,
+      maxHp:        char.stats.maxHp,
+      ac:           char.stats.ac,
+      gold:         char.gold,
+      xp:           char.xp,
+      strength:     char.stats.strength,
+      dexterity:    char.stats.dexterity,
+      constitution: char.stats.constitution,
+      intelligence: char.stats.intelligence,
+      wisdom:       char.stats.wisdom,
+      charisma:     char.stats.charisma,
+      skills:       char.skills,
+      conditions:   char.conditions,
+      inventory:    inv,
+      backstory:    char.backstory || '',
+      adventureLog: char.adventureLog.slice(-15),
+    };
+  },
+
+  /** Inventory list with item details. */
   get_character_inventory(params) {
     const char = db.getCharacter(params.characterId);
     if (!char) return { error: 'Character not found' };
@@ -98,38 +150,112 @@ export const DM_TOOLS = {
     });
   },
 
+  /** Single stat value lookup. */
   get_character_stat(params) {
     const char = db.getCharacter(params.characterId);
     if (!char) return { error: 'Character not found' };
     return { value: char.stats[params.stat] ?? char[params.stat] ?? null };
   },
 
+  /**
+   * Full NPC details — personality, appearance, backstory, HP/AC.
+   * Use when you need context beyond what the NPC quick-reference shows.
+   * Accepts npcId OR npcName.
+   */
+  get_npc_details(params) {
+    let npc = null;
+    if (params.npcId)   npc = db.getCharacter(params.npcId);
+    if (!npc && params.npcName) npc = db.getNPCByName(params.npcName);
+    if (!npc) return { error: 'NPC not found' };
+    return {
+      id:          npc.id,
+      name:        npc.name,
+      race:        npc.race,
+      role:        npc.npcRole || npc.class,
+      hp:          npc.stats.hp,
+      maxHp:       npc.stats.maxHp,
+      ac:          npc.stats.ac,
+      conditions:  npc.conditions || [],
+      personality: npc.personality || '',
+      appearance:  npc.appearance  || '',
+      backstory:   npc.backstory   || '',
+    };
+  },
+
+  /** Full adventure log for a character (all entries). */
+  get_adventure_log(params) {
+    const char = db.getCharacter(params.characterId);
+    if (!char) return { error: 'Character not found' };
+    return {
+      name: char.name,
+      log:  char.adventureLog,
+    };
+  },
+
+  /** List of all past and current scenes in this story. */
+  get_scene_history(params) {
+    const story = db.getStory(params.storyId);
+    if (!story) return { error: 'Story not found' };
+    return {
+      currentSceneIndex: story.currentSceneIndex,
+      scenes: story.scenes.map((s, i) => ({
+        index:       i,
+        title:       s.title,
+        description: s.description.slice(0, 250),
+        completed:   Boolean(s.completedAt),
+        isCurrent:   i === story.currentSceneIndex,
+      })),
+    };
+  },
+
   // ─── WRITE tools ───────────────────────────────────────────
 
+  /** Damage (negative delta) or heal (positive delta) a character or NPC. */
   modify_hp(params) {
     const char = db.updateCharacterHP(params.characterId, params.delta);
     if (!char) return { error: 'Character not found' };
     return {
-      newHp: char.stats.hp,
-      maxHp: char.stats.maxHp,
-      delta: params.delta,
+      newHp:  char.stats.hp,
+      maxHp:  char.stats.maxHp,
+      delta:  params.delta,
       isDead: char.stats.hp <= 0,
       reason: params.reason || '',
     };
   },
 
+  /** Earn (positive) or spend/lose (negative) gold. */
+  modify_gold(params) {
+    const char = db.getCharacter(params.characterId);
+    if (!char) return { error: 'Character not found' };
+    char.gold = Math.max(0, (char.gold || 0) + params.delta);
+    db.saveCharacter(char);
+    return { newGold: char.gold, delta: params.delta };
+  },
+
+  /** Award (positive) or remove (negative) XP. */
+  modify_xp(params) {
+    const char = db.getCharacter(params.characterId);
+    if (!char) return { error: 'Character not found' };
+    char.xp = Math.max(0, (char.xp || 0) + params.delta);
+    db.saveCharacter(char);
+    return { newXp: char.xp, delta: params.delta };
+  },
+
+  /** Give an item (by itemId) to a character. Use create_item first if the item doesn't exist yet. */
   add_item(params) {
     db.updateCharacterInventory(params.characterId, params.itemId, 'add');
     const item = db.getItem(params.itemId);
     return { success: true, itemName: item?.name || params.itemId };
   },
 
+  /** Remove an item from a character's inventory. */
   remove_item(params) {
     db.updateCharacterInventory(params.characterId, params.itemId, 'remove');
     const item = db.getItem(params.itemId);
     return { success: true, itemName: item?.name || params.itemId };
   },
 
+  /** Apply a 5e status condition (Poisoned, Blinded, Grappled, etc.). */
   add_condition(params) {
     const char = db.getCharacter(params.characterId);
     if (!char) return { error: 'Character not found' };
@@ -140,6 +266,7 @@ export const DM_TOOLS = {
     return { conditions: char.conditions };
   },
 
+  /** Remove a status condition. */
   remove_condition(params) {
     const char = db.getCharacter(params.characterId);
     if (!char) return { error: 'Character not found' };
@@ -148,38 +275,56 @@ export const DM_TOOLS = {
     return { conditions: char.conditions };
   },
 
-  modify_gold(params) {
-    const char = db.getCharacter(params.characterId);
-    if (!char) return { error: 'Character not found' };
-    char.gold = Math.max(0, (char.gold || 0) + params.delta);
-    db.saveCharacter(char);
-    return { newGold: char.gold, delta: params.delta };
-  },
-
+  /** Append a summary entry to a character's adventure log. */
   log_event(params) {
     db.addToAdventureLog(params.characterId, params.entry);
     return { success: true };
   },
 
+  /** Modify an NPC stat (hp, maxHp, ac) or add/remove a condition. */
+  set_npc_stat(params) {
+    const npc = params.npcId
+      ? db.getCharacter(params.npcId)
+      : db.getNPCByName(params.npcName || '');
+    if (!npc || !npc.isNPC) return { error: 'NPC not found' };
+
+    if (params.stat === 'hp') {
+      const delta = params.value - npc.stats.hp;
+      return DM_TOOLS.modify_hp({ characterId: npc.id, delta, reason: params.reason });
+    }
+    if (['maxHp', 'ac'].includes(params.stat)) {
+      npc.stats[params.stat] = params.value;
+      db.saveCharacter(npc);
+      return { success: true, stat: params.stat, value: params.value };
+    }
+    if (params.stat === 'add_condition') {
+      return DM_TOOLS.add_condition({ characterId: npc.id, condition: params.value });
+    }
+    if (params.stat === 'remove_condition') {
+      return DM_TOOLS.remove_condition({ characterId: npc.id, condition: params.value });
+    }
+    return { error: `Unknown stat "${params.stat}". Use: hp, maxHp, ac, add_condition, remove_condition` };
+  },
+
+  /** Mark the current scene complete and open a new one. */
   advance_scene(params) {
     const story = db.getStory(params.storyId);
     if (!story) return { error: 'Story not found' };
 
-    // Mark current scene complete
     const currentScene = story.scenes[story.currentSceneIndex];
     if (currentScene && !currentScene.completedAt) {
       currentScene.completedAt = Date.now();
     }
 
     const newScene = {
-      id: uuid(),
-      title: params.newSceneTitle || 'New Scene',
-      description: params.newSceneDescription || '',
-      imagePrompt: params.newSceneDescription || '',
-      imageUrl: '',
-      npcs: [],
-      loot: [],
-      completedAt: null,
+      id:           uuid(),
+      title:        params.newSceneTitle || 'New Scene',
+      description:  params.newSceneDescription || '',
+      imagePrompt:  params.newSceneDescription || '',
+      imageUrl:     '',
+      npcs:         [],
+      loot:         [],
+      completedAt:  null,
     };
 
     story.scenes.push(newScene);
@@ -187,15 +332,18 @@ export const DM_TOOLS = {
     story.sceneImageUrl = '';
     db.saveStory(story);
 
-    // Trigger async image generation (caller handles this)
     return {
       newSceneIndex: story.currentSceneIndex,
-      newSceneId: newScene.id,
-      needsImage: true,
-      imagePrompt: newScene.imagePrompt,
+      newSceneId:    newScene.id,
+      needsImage:    true,
+      imagePrompt:   newScene.imagePrompt,
     };
   },
 
+  /**
+   * Create a brand-new item and save it to the item library.
+   * Returns itemId — use it immediately in add_item in your next turn.
+   */
   async create_item(params) {
     const lore = await geminiGenerate(
       `Write a 2-sentence fantasy lore backstory for a DND item named "${params.name}". ${params.description || ''}. Be evocative and mysterious. Just the lore text, no labels.`
@@ -205,16 +353,16 @@ export const DM_TOOLS = {
     const iconBase64 = await generateIconBase64(iconPrompt).catch(() => '');
 
     const item = {
-      id: uuid(),
-      name: params.name,
-      type: params.type || 'misc',
+      id:          uuid(),
+      name:        params.name,
+      type:        params.type || 'misc',
       description: params.description || '',
       lore,
       iconBase64,
       iconPrompt,
-      stats: params.stats || {},
-      rarity: params.rarity || 'common',
-      createdAt: Date.now(),
+      stats:       params.stats || {},
+      rarity:      params.rarity || 'common',
+      createdAt:   Date.now(),
     };
     db.saveItem(item);
     return { itemId: item.id, item };
@@ -223,9 +371,10 @@ export const DM_TOOLS = {
   // ─── NPC / World Character tools ───────────────────────────
 
   /**
-   * Introduce a new world character (NPC, enemy, merchant, etc.).
-   * Generates an AI backstory and portrait, then saves as a character.
-   * The character is remembered across sessions via the characters table.
+   * Introduce a new world character (NPC, enemy, merchant, creature…).
+   * Call this the FIRST time a named character appears. They are then
+   * remembered across all sessions via the characters table.
+   * Returns npcId — use it in npc_speak in your next turn.
    */
   async introduce_npc(params) {
     const {
@@ -234,37 +383,36 @@ export const DM_TOOLS = {
       hp = 10, ac = 10,
     } = params;
 
-    // AI-generated backstory
     const backstory = await geminiGenerate(
       `Write a 2-3 sentence backstory for a DND NPC. Name: ${name}. Role: ${role}. Race: ${race}. Personality: ${personality || 'mysterious'}. Appearance: ${appearance || 'unremarkable'}. Be evocative. Return only the backstory text, no labels or formatting.`
     ).catch(() => `${name} is a ${race} ${role} with a past shrouded in mystery.`);
 
     const npc = {
-      id: uuid(),
+      id:          uuid(),
       name,
       race,
-      class: role,
-      level: 1,
-      isNPC: true,
-      npcRole: role,
+      class:       role,
+      level:       1,
+      isNPC:       true,
+      npcRole:     role,
       personality,
       appearance,
       backstory,
-      portrait: '',
+      portrait:    '',
       stats: {
         hp, maxHp: hp, ac,
         strength: 10, dexterity: 10, constitution: 10,
         intelligence: 10, wisdom: 10, charisma: 10,
       },
-      skills: [],
-      inventory: [],
-      conditions: [],
-      gold: 0,
-      xp: 0,
-      adventureLog: [],
-      metInStoryIds: storyId ? [storyId] : [],
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
+      skills:          [],
+      inventory:       [],
+      conditions:      [],
+      gold:            0,
+      xp:              0,
+      adventureLog:    [],
+      metInStoryIds:   storyId ? [storyId] : [],
+      createdAt:       Date.now(),
+      updatedAt:       Date.now(),
     };
 
     db.saveCharacter(npc);
@@ -273,7 +421,6 @@ export const DM_TOOLS = {
       db.addNPCToStory(storyId, npc.id);
     }
 
-    // Generate portrait in the background — updates the saved NPC when ready
     const portraitPrompt = `${name}, ${race} ${role}, DND fantasy character portrait, ${appearance || 'dramatic lighting'}, detailed face, dark fantasy art, circular portrait`;
     generateNPCPortraitAsync(npc.id, portraitPrompt);
 
@@ -281,27 +428,103 @@ export const DM_TOOLS = {
   },
 
   /**
-   * Make an NPC say something. The speech is rendered as its own
-   * styled bubble in the chat, separate from the DM narration.
-   * Accepts npcId OR npcName (for NPCs introduced in the same turn).
+   * Make an NPC say something out loud.
+   * Renders as a distinct speech bubble — the ONLY way NPC dialogue should appear.
+   * Accepts npcId OR npcName.
    */
   npc_speak(params) {
     let npc = null;
-    if (params.npcId) {
-      npc = db.getCharacter(params.npcId);
-    }
-    if (!npc && params.npcName) {
-      npc = db.getNPCByName(params.npcName);
-    }
+    if (params.npcId) npc = db.getCharacter(params.npcId);
+    if (!npc && params.npcName) npc = db.getNPCByName(params.npcName);
     if (!npc) {
       return { error: 'NPC not found', npcName: params.npcName || params.npcId };
     }
     return {
-      npcId: npc.id,
+      npcId:   npc.id,
       npcName: npc.name,
       npcRole: npc.npcRole || npc.class,
       portrait: npc.portrait,
-      speech: params.speech,
+      speech:  params.speech,
+    };
+  },
+
+  // ─── META tools ────────────────────────────────────────────
+
+  /**
+   * Compress the chat history using AI to keep the context manageable.
+   * The full history is preserved server-side and visible to the player.
+   * After compression the DM operates from a compact adventure summary.
+   *
+   * Use this proactively when the conversation is getting very long (> 40 messages)
+   * or when the player asks for it.
+   */
+  async compress_history(params) {
+    const story = db.getStory(params.storyId);
+    if (!story) return { error: 'Story not found' };
+
+    const compressible = story.dmChatHistory.filter(
+      m => (m.role === 'user' || m.role === 'assistant') && !m.isCompressionSummary
+    );
+
+    if (compressible.length < 8) {
+      return { error: 'History is too short to compress (need at least 8 messages). Continue playing.' };
+    }
+
+    // Build plain-text transcript for the AI summariser
+    const transcript = compressible
+      .map(m => `${m.role === 'user' ? 'PLAYER' : 'DM'}: ${m.content.slice(0, 600)}`)
+      .join('\n\n');
+
+    const summary = await geminiGenerate(
+      `You are an AI memory system for a DND campaign. Compress the following conversation into a dense adventure summary for the Dungeon Master's memory. Cover ALL of the following:
+
+- Major events and their outcomes
+- Combat encounters (who fought, who won, damage taken)
+- Items received or lost by each character, with item names
+- Gold and XP changes
+- NPCs met, their names, roles, and current relationship to the party
+- Key decisions the players made and consequences
+- Current quest objective and where the party is heading
+- The mood / tone of the session so far
+
+Be specific with names and numbers. Write in present tense ("The party is…"). Under 700 words.
+
+CONVERSATION TRANSCRIPT:
+${transcript.slice(0, 10000)}`,
+      '',
+      0.5
+    ).catch(() => 'Adventure history compressed. The party has been adventuring.');
+
+    // Archive the full history (append to existing archive if already compressed before)
+    if (!story.dmChatHistoryFull) story.dmChatHistoryFull = [];
+    story.dmChatHistoryFull.push(...story.dmChatHistory);
+
+    const messageCount = story.dmChatHistory.length;
+
+    // Replace live history with a compression marker (UI-only) + the summary as context
+    story.dmChatHistory = [
+      {
+        role:                  'compression',
+        content:               'Session history compressed',
+        summary,
+        compressedCount:       messageCount,
+        compressedAt:          Date.now(),
+        compressionIndex:      (story.dmChatHistoryFull.length - messageCount),
+      },
+      {
+        role:                  'user',
+        content:               `[ADVENTURE SUMMARY — ${messageCount} previous messages compressed into this note]\n\n${summary}`,
+        isCompressionSummary:  true,
+        timestamp:             Date.now(),
+      },
+    ];
+
+    db.saveStory(story);
+
+    return {
+      success:       true,
+      compressedCount: messageCount,
+      summary,
     };
   },
 };
@@ -311,8 +534,6 @@ export const DM_TOOLS = {
 /**
  * Format tool results into a concise, machine-readable summary that is
  * injected back into the DM's context after each agentic iteration.
- * The DM reads this to learn what actually happened (dice rolls, HP changes, etc.)
- * and can then make additional tool calls or write its final narration.
  *
  * @param {Array<{tool:string, params:Object, result:any}>} toolResults
  * @returns {string}
@@ -339,26 +560,50 @@ export function formatToolResultsForRePrompt(toolResults) {
         return `✅ introduce_npc: NPC "${result.npc?.name}" created. npcId="${result.npcId}" — use this ID in npc_speak calls`;
       case 'modify_hp':
         return `✅ modify_hp: HP updated → ${result.newHp}/${result.maxHp}${result.isDead ? ' — CHARACTER IS DOWN (0 HP)' : ''}`;
+      case 'modify_gold':
+        return `✅ modify_gold: Gold → ${result.newGold} gp (${result.delta >= 0 ? '+' : ''}${result.delta})`;
+      case 'modify_xp':
+        return `✅ modify_xp: XP → ${result.newXp} (${result.delta >= 0 ? '+' : ''}${result.delta})`;
       case 'add_item':
         return `✅ add_item: "${result.itemName}" added to inventory`;
       case 'remove_item':
         return `✅ remove_item: "${result.itemName}" removed from inventory`;
-      case 'modify_gold':
-        return `✅ modify_gold: Gold updated → ${result.newGold} gp (${result.delta >= 0 ? '+' : ''}${result.delta})`;
       case 'add_condition':
         return `✅ add_condition: Active conditions → [${(result.conditions || []).join(', ') || 'none'}]`;
       case 'remove_condition':
         return `✅ remove_condition: Active conditions → [${(result.conditions || []).join(', ') || 'none'}]`;
+      case 'set_npc_stat':
+        return result.newHp !== undefined
+          ? `✅ set_npc_stat: NPC HP → ${result.newHp}/${result.maxHp}`
+          : `✅ set_npc_stat: ${result.stat} set to ${result.value}`;
       case 'get_character_stats':
-        return `ℹ️ get_character_stats: HP ${result.hp}/${result.maxHp} | AC ${result.ac} | Gold ${result.gold} gp | Conditions: [${(result.conditions || []).join(', ') || 'none'}]`;
+        return `ℹ️ ${result.name || 'Character'}: HP ${result.hp}/${result.maxHp} | AC ${result.ac} | Gold ${result.gold} gp | XP ${result.xp} | Conditions: [${(result.conditions || []).join(', ') || 'none'}]`;
+      case 'get_full_character': {
+        const inv = Array.isArray(result.inventory) && result.inventory.length
+          ? result.inventory.map(i => `${i.name} ×${i.quantity}`).join(', ')
+          : 'empty';
+        return `ℹ️ Full sheet for ${result.name}: Lv${result.level} ${result.race} ${result.class} | HP ${result.hp}/${result.maxHp} | AC ${result.ac} | STR${result.strength} DEX${result.dexterity} CON${result.constitution} INT${result.intelligence} WIS${result.wisdom} CHA${result.charisma} | Gold ${result.gold} gp | XP ${result.xp} | Inventory: ${inv} | Skills: ${(result.skills || []).join(', ') || 'none'} | Conditions: [${(result.conditions || []).join(', ') || 'none'}] | Backstory: ${(result.backstory || '').slice(0, 200)}`;
+      }
       case 'get_character_inventory':
-        return `ℹ️ get_character_inventory: ${Array.isArray(result) ? (result.map(i => `${i.name} ×${i.quantity}`).join(', ') || 'empty') : JSON.stringify(result)}`;
+        return `ℹ️ Inventory: ${Array.isArray(result) ? (result.map(i => `${i.name} ×${i.quantity}`).join(', ') || 'empty') : JSON.stringify(result)}`;
+      case 'get_npc_details':
+        return `ℹ️ NPC ${result.name} (${result.role}): HP ${result.hp}/${result.maxHp} | AC ${result.ac} | Conditions: [${(result.conditions || []).join(', ') || 'none'}] | Personality: ${result.personality} | Appearance: ${result.appearance} | Backstory: ${(result.backstory || '').slice(0, 200)}`;
+      case 'get_adventure_log':
+        return `ℹ️ Adventure log for ${result.name}: ${(result.log || []).slice(-10).join(' | ') || 'No entries'}`;
+      case 'get_scene_history': {
+        const scenes = (result.scenes || []).map(s =>
+          `[${s.completed ? '✓' : s.isCurrent ? '▶' : '○'}] Scene ${s.index + 1}: ${s.title}`
+        ).join(' → ');
+        return `ℹ️ Scene history: ${scenes}`;
+      }
       case 'advance_scene':
         return `✅ advance_scene: New scene started (sceneId="${result.newSceneId}")`;
       case 'npc_speak':
         return `✅ npc_speak: Dialogue recorded for "${result.npcName}"`;
       case 'log_event':
         return `✅ log_event: Adventure log updated`;
+      case 'compress_history':
+        return `✅ compress_history: ${result.compressedCount} messages compressed into adventure summary. The DM will now work from this summary.`;
       default:
         return `✅ ${tool}: ${JSON.stringify(result).slice(0, 120)}`;
     }
@@ -368,7 +613,7 @@ export function formatToolResultsForRePrompt(toolResults) {
 // ── Tool executor ─────────────────────────────────────────────
 
 /**
- * Execute an array of tool calls parsed from DM response.
+ * Execute an array of tool calls parsed from the DM response.
  * @param {Object[]} toolCalls
  * @returns {Promise<Array<{tool:string, params:Object, result:any}>>}
  */
@@ -407,19 +652,26 @@ export function toolResultSummary(tool, params, result) {
 
   switch (tool) {
     case 'roll_dice': {
-      const flag = result.isCrit ? ' ⚡ Critical!' : result.isCritFail ? ' 💀 Fumble!' : '';
+      const flag  = result.isCrit ? ' ⚡ Critical!' : result.isCritFail ? ' 💀 Fumble!' : '';
       const label = params.reason ? ` (${params.reason})` : '';
-      return `🎲 Dice ${result.notation}${label}: **${result.total}**${flag}`;
+      return `🎲 ${result.notation}${label}: **${result.total}**${flag}`;
     }
     case 'modify_hp': {
-      const name = charName();
-      const arrow = params.delta < 0 ? 'takes' : 'heals';
+      const name   = charName();
       const amount = Math.abs(params.delta);
-      const hpStr = `${result.newHp}/${result.maxHp} HP`;
-      if (result.isDead) return `💀 ${name} has fallen to 0 HP and is unconscious!`;
+      const hpStr  = `${result.newHp}/${result.maxHp} HP`;
+      if (result.isDead) return `💀 ${name} has fallen to 0 HP!`;
       return params.delta < 0
-        ? `⚔️ ${name} ${arrow} ${amount} damage (${hpStr})${params.reason ? ' — ' + params.reason : ''}`
-        : `❤️ ${name} ${arrow} ${amount} HP (${hpStr})`;
+        ? `⚔️ ${name} takes ${amount} damage (${hpStr})${params.reason ? ' — ' + params.reason : ''}`
+        : `❤️ ${name} heals ${amount} HP (${hpStr})`;
+    }
+    case 'modify_gold': {
+      const name = charName();
+      return `💰 ${name} ${params.delta >= 0 ? 'earns' : 'spends'} ${Math.abs(params.delta)} gp (now ${result.newGold} gp)`;
+    }
+    case 'modify_xp': {
+      const name = charName();
+      return `⭐ ${name} ${params.delta >= 0 ? 'gains' : 'loses'} ${Math.abs(params.delta)} XP (now ${result.newXp} XP)`;
     }
     case 'add_item':
       return `🎒 ${charName()} receives: ${result.itemName}`;
@@ -429,9 +681,15 @@ export function toolResultSummary(tool, params, result) {
       return `⚡ ${charName()} gains condition: ${params.condition}`;
     case 'remove_condition':
       return `✨ ${charName()} loses condition: ${params.condition}`;
-    case 'modify_gold': {
-      const sign = params.delta >= 0 ? '+' : '';
-      return `💰 ${charName()} ${params.delta >= 0 ? 'earns' : 'spends'} ${Math.abs(params.delta)} gold (now ${result.newGold} gp)`;
+    case 'set_npc_stat': {
+      const npc = params.npcId ? db.getCharacter(params.npcId) : db.getNPCByName(params.npcName || '');
+      const name = npc?.name || 'NPC';
+      if (result.newHp !== undefined) {
+        return result.isDead
+          ? `💀 ${name} has fallen!`
+          : `⚔️ ${name} HP → ${result.newHp}/${result.maxHp}`;
+      }
+      return `🔧 ${name}: ${params.stat} updated`;
     }
     case 'advance_scene':
       return `🗺️ Scene advances: ${params.newSceneTitle || 'New Scene'}`;
@@ -442,7 +700,18 @@ export function toolResultSummary(tool, params, result) {
     case 'introduce_npc':
       return `🎭 ${result.npc?.name || params.name} enters the story`;
     case 'npc_speak':
-      return ''; // NPC speech is rendered as its own bubble — no badge needed
+      return ''; // NPC speech renders as its own bubble
+    case 'compress_history':
+      return `📜 History compressed (${result.compressedCount} messages summarised)`;
+    // Read tools produce no visible badge — they're internal DM actions
+    case 'get_character_stats':
+    case 'get_full_character':
+    case 'get_character_inventory':
+    case 'get_character_stat':
+    case 'get_npc_details':
+    case 'get_adventure_log':
+    case 'get_scene_history':
+      return '';
     default:
       return `🔧 Tool executed: ${tool}`;
   }

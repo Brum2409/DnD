@@ -177,7 +177,9 @@ export async function testGeminiKey() {
  */
 export function toGeminiHistory(messages) {
   return messages
-    .filter(m => m.role !== 'system' && m.role !== 'npc')
+    // 'system' and 'npc' are UI-only; 'compression' is a UI divider —
+    // the actual adventure summary is stored as the 'user' message right after it.
+    .filter(m => m.role !== 'system' && m.role !== 'npc' && m.role !== 'compression')
     .map(m => ({
       role: m.role === 'assistant' ? 'model' : 'user',
       parts: [{ text: m.content }],

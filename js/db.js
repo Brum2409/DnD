@@ -23,6 +23,31 @@
  * @property {number} wisdom
  * @property {number} charisma
  *
+ * @typedef {Object} SpellSlotLevel
+ * @property {number} total
+ * @property {number} used
+ * @property {boolean} [pactMagic]
+ *
+ * @typedef {Object} Spell
+ * @property {string} id
+ * @property {string} name
+ * @property {number} level
+ * @property {string} school
+ * @property {string} castingTime
+ * @property {string} range
+ * @property {string} components
+ * @property {string} duration
+ * @property {boolean} concentration
+ * @property {boolean} ritual
+ * @property {string} description
+ * @property {string} lore
+ * @property {string} iconBase64
+ * @property {string} iconPrompt
+ * @property {string} [damage]
+ * @property {string} [damageType]
+ * @property {string} [savingThrow]
+ * @property {number} createdAt
+ *
  * @typedef {Object} Character
  * @property {string} id
  * @property {string} name
@@ -46,6 +71,8 @@
  * @property {string} [appearance]    - physical description
  * @property {string[]} [metInStoryIds] - story IDs where this NPC has appeared
  * @property {string} [lastSceneId]   - ID of the scene where this NPC was last present
+ * @property {string[]} [spells]      - spell IDs known/prepared (empty for non-casters)
+ * @property {Object.<number,SpellSlotLevel>|null} [spellSlots] - keyed by slot level 1–9; null for non-casters
  *
  * @typedef {Object} ItemStats
  * @property {string} [damage]       - e.g. "1d6+2"
@@ -103,6 +130,7 @@ const cache = {
   characters: [],
   items: [],
   stories: [],
+  spells: [],
   loaded: false,
 };
 
@@ -124,6 +152,7 @@ export async function init() {
   cache.characters = Array.isArray(data.characters) ? data.characters : [];
   cache.items      = Array.isArray(data.items)      ? data.items      : [];
   cache.stories    = Array.isArray(data.stories)    ? data.stories    : [];
+  cache.spells     = Array.isArray(data.spells)     ? data.spells     : [];
   cache.loaded = true;
 }
 
@@ -404,6 +433,7 @@ export function exportAllData() {
     characters: getAllCharacters(),
     items: getAllItems(),
     stories: getAllStories(),
+    spells: getAllSpells(),
     exportedAt: Date.now(),
     version: 1,
   };
@@ -439,6 +469,154 @@ export function importData(data) {
       }
     }
   }
+  if (data.spells) {
+    for (const sp of data.spells) {
+      if (!cache.spells.find(x => x.id === sp.id)) {
+        cache.spells.push(sp);
+        apiPut(`/api/spells/${sp.id}`, sp);
+      }
+    }
+  }
+}
+
+// ── Spells ────────────────────────────────────────────────────
+
+/**
+ * @returns {Spell[]}
+ */
+export function getAllSpells() {
+  return [...cache.spells];
+}
+
+/**
+ * @param {string} id
+ * @returns {Spell|null}
+ */
+export function getSpell(id) {
+  return cache.spells.find(s => s.id === id) || null;
+}
+
+/**
+ * Upsert a spell.
+ * @param {Spell} spell
+ */
+export function saveSpell(spell) {
+  const idx = cache.spells.findIndex(s => s.id === spell.id);
+  if (idx >= 0) {
+    cache.spells[idx] = spell;
+  } else {
+    cache.spells.push(spell);
+  }
+  apiPut(`/api/spells/${spell.id}`, spell);
+}
+
+/**
+ * @param {string} id
+ */
+export function deleteSpell(id) {
+  cache.spells = cache.spells.filter(s => s.id !== id);
+  apiDelete(`/api/spells/${id}`);
+}
+
+// ── Character spell operations ────────────────────────────────
+
+/**
+ * Add a spell to a character's known spells list.
+ * Idempotent — does nothing if already known.
+ * @param {string} charId
+ * @param {string} spellId
+ */
+export function learnSpell(charId, spellId) {
+  const char = getCharacter(charId);
+  if (!char) return;
+  if (!char.spells) char.spells = [];
+  if (!char.spells.includes(spellId)) {
+    char.spells.push(spellId);
+    saveCharacter(char);
+  }
+}
+
+/**
+ * Remove a spell from a character's known spells list.
+ * @param {string} charId
+ * @param {string} spellId
+ */
+export function forgetSpell(charId, spellId) {
+  const char = getCharacter(charId);
+  if (!char) return;
+  char.spells = (char.spells || []).filter(id => id !== spellId);
+  saveCharacter(char);
+}
+
+/**
+ * Expend one spell slot of the given level for a character.
+ * @param {string} charId
+ * @param {number} slotLevel  1–9
+ * @returns {{ ok: boolean, remaining: number, error?: string }}
+ */
+export function useSpellSlot(charId, slotLevel) {
+  const char = getCharacter(charId);
+  if (!char) return { ok: false, error: 'Character not found' };
+  if (!char.spellSlots) return { ok: false, error: 'Character has no spell slots' };
+
+  const slot = char.spellSlots[slotLevel];
+  if (!slot) return { ok: false, error: `No level-${slotLevel} spell slots` };
+
+  const available = slot.total - slot.used;
+  if (available <= 0) return { ok: false, error: `No level-${slotLevel} slots remaining` };
+
+  slot.used += 1;
+  saveCharacter(char);
+  return { ok: true, remaining: slot.total - slot.used };
+}
+
+/**
+ * Restore spell slots for a character (long rest = all; short rest = warlock pact only).
+ * If spellSlots is null the function initialises them from the class/level table.
+ * @param {string} charId
+ * @param {'long'|'short'|'all'} restType
+ * @returns {Character|null}
+ */
+export function restoreSpellSlots(charId, restType = 'long') {
+  const char = getCharacter(charId);
+  if (!char) return null;
+
+  if (!char.spellSlots) {
+    // Lazily initialise using the class/level table (imported at call site)
+    return char;  // caller (dm-tools) handles initialisation
+  }
+
+  if (restType === 'long' || restType === 'all') {
+    // Restore everything
+    for (const level of Object.keys(char.spellSlots)) {
+      char.spellSlots[level].used = 0;
+    }
+  } else if (restType === 'short') {
+    // Only pact magic slots recover on short rest
+    for (const level of Object.keys(char.spellSlots)) {
+      if (char.spellSlots[level].pactMagic) {
+        char.spellSlots[level].used = 0;
+      }
+    }
+  }
+
+  saveCharacter(char);
+  return char;
+}
+
+/**
+ * Initialise or overwrite a character's spell slots to the given map.
+ * Used by the DM tools when first granting spell slots.
+ * @param {string} charId
+ * @param {Object.<number,{total:number,used:number,pactMagic?:boolean}>} slots
+ * @returns {Character|null}
+ */
+export function setSpellSlots(charId, slots) {
+  const char = getCharacter(charId);
+  if (!char) return null;
+  char.spellSlots = slots;
+  saveCharacter(char);
+  return char;
 }
 
 /**
@@ -449,9 +627,11 @@ export function clearAllData() {
   for (const c of cache.characters) apiDelete(`/api/characters/${c.id}`);
   for (const i of cache.items)      apiDelete(`/api/items/${i.id}`);
   for (const s of cache.stories)    apiDelete(`/api/stories/${s.id}`);
+  for (const sp of cache.spells)    apiDelete(`/api/spells/${sp.id}`);
 
   // Clear cache
   cache.characters = [];
   cache.items      = [];
   cache.stories    = [];
+  cache.spells     = [];
 }

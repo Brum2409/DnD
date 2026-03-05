@@ -323,6 +323,114 @@ export const SKILLS = [
   { name: 'Survival',        ability: 'wisdom' },
 ];
 
+// ── DnD 5e Spell Slot Tables ──────────────────────────────────
+
+/**
+ * Official DnD 5e spell slot tables indexed by [charLevel-1][spellLevel-1].
+ * Each inner array has 9 entries representing L1–L9 slot counts.
+ * @private
+ */
+const _FULL_CASTER_SLOTS = [
+  [2,0,0,0,0,0,0,0,0], // level 1
+  [3,0,0,0,0,0,0,0,0], // level 2
+  [4,2,0,0,0,0,0,0,0], // level 3
+  [4,3,0,0,0,0,0,0,0], // level 4
+  [4,3,2,0,0,0,0,0,0], // level 5
+  [4,3,3,0,0,0,0,0,0], // level 6
+  [4,3,3,1,0,0,0,0,0], // level 7
+  [4,3,3,2,0,0,0,0,0], // level 8
+  [4,3,3,3,1,0,0,0,0], // level 9
+  [4,3,3,3,2,0,0,0,0], // level 10
+  [4,3,3,3,2,1,0,0,0], // level 11
+  [4,3,3,3,2,1,0,0,0], // level 12
+  [4,3,3,3,2,1,1,0,0], // level 13
+  [4,3,3,3,2,1,1,0,0], // level 14
+  [4,3,3,3,2,1,1,1,0], // level 15
+  [4,3,3,3,2,1,1,1,0], // level 16
+  [4,3,3,3,2,1,1,1,1], // level 17
+  [4,3,3,3,3,1,1,1,1], // level 18
+  [4,3,3,3,3,2,1,1,1], // level 19
+  [4,3,3,3,3,2,2,1,1], // level 20
+];
+
+const _HALF_CASTER_SLOTS = [
+  [0,0,0,0,0], // level 1 — no slots yet
+  [2,0,0,0,0], // level 2
+  [3,0,0,0,0], // level 3
+  [3,0,0,0,0], // level 4
+  [4,2,0,0,0], // level 5
+  [4,2,0,0,0], // level 6
+  [4,3,0,0,0], // level 7
+  [4,3,0,0,0], // level 8
+  [4,3,2,0,0], // level 9
+  [4,3,2,0,0], // level 10
+  [4,3,3,0,0], // level 11
+  [4,3,3,0,0], // level 12
+  [4,3,3,1,0], // level 13
+  [4,3,3,1,0], // level 14
+  [4,3,3,2,0], // level 15
+  [4,3,3,2,0], // level 16
+  [4,3,3,3,1], // level 17
+  [4,3,3,3,1], // level 18
+  [4,3,3,3,2], // level 19
+  [4,3,3,3,2], // level 20
+];
+
+// Warlock Pact Magic: [slots, slotLevel] per character level
+const _WARLOCK_PACT = [
+  [1,1],[2,1],[2,2],[2,2],[2,3],[2,3],[2,4],[2,4],
+  [2,5],[2,5],[3,5],[3,5],[3,5],[3,5],[3,5],[3,5],
+  [4,5],[4,5],[4,5],[4,5],
+];
+
+/**
+ * Get the base spell slots for a class at a given character level.
+ *
+ * Returns an object `{ [slotLevel]: { total: N, used: 0 } }` for all
+ * levels where total > 0.  Returns null for non-spellcasting classes.
+ *
+ * For Warlocks the Pact Magic slots appear at a single level (e.g. all
+ * L5 slots at higher levels); they recover on a short rest.
+ *
+ * @param {string} className  - case-insensitive class name
+ * @param {number} charLevel  - 1–20
+ * @returns {Object.<number,{total:number,used:number}>|null}
+ */
+export function getBaseSpellSlots(className, charLevel) {
+  const cls = (className || '').toLowerCase().trim();
+  const idx = Math.max(0, Math.min(19, charLevel - 1));
+
+  const fullCasters  = ['wizard','sorcerer','druid','cleric','bard'];
+  const halfCasters  = ['paladin','ranger'];
+
+  if (fullCasters.includes(cls)) {
+    const row = _FULL_CASTER_SLOTS[idx];
+    const result = {};
+    row.forEach((n, i) => { if (n > 0) result[i + 1] = { total: n, used: 0 }; });
+    return Object.keys(result).length ? result : null;
+  }
+
+  if (halfCasters.includes(cls)) {
+    const row = _HALF_CASTER_SLOTS[idx];
+    const result = {};
+    row.forEach((n, i) => { if (n > 0) result[i + 1] = { total: n, used: 0 }; });
+    return Object.keys(result).length ? result : null;
+  }
+
+  if (cls === 'warlock') {
+    const [slots, level] = _WARLOCK_PACT[idx];
+    return { [level]: { total: slots, used: 0, pactMagic: true } };
+  }
+
+  // Non-casters (fighter, rogue, barbarian, monk, etc.) — no spell slots
+  return null;
+}
+
+export const SPELL_SCHOOLS = [
+  'Abjuration', 'Conjuration', 'Divination', 'Enchantment',
+  'Evocation', 'Illusion', 'Necromancy', 'Transmutation',
+];
+
 export const CONDITIONS = [
   'Blinded', 'Charmed', 'Deafened', 'Exhaustion', 'Frightened',
   'Grappled', 'Incapacitated', 'Invisible', 'Paralyzed', 'Petrified',

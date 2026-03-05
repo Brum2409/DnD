@@ -20,16 +20,18 @@ export default async function handler(req, res) {
   try {
     await ensureSchema();
 
-    const [charResult, itemResult, storyResult] = await Promise.all([
+    const [charResult, itemResult, storyResult, spellResult] = await Promise.all([
       query('SELECT data FROM characters WHERE user_id = $1 ORDER BY updated_at DESC', [userId]),
       query('SELECT data FROM items WHERE user_id = $1 ORDER BY created_at DESC', [userId]),
       query('SELECT data FROM stories WHERE user_id = $1 ORDER BY updated_at DESC', [userId]),
+      query('SELECT data FROM spells WHERE user_id = $1 ORDER BY created_at DESC', [userId]),
     ]);
 
     return res.status(200).json({
       characters: charResult.rows.map(r => r.data),
       items: itemResult.rows.map(r => r.data),
       stories: storyResult.rows.map(r => r.data),
+      spells: spellResult.rows.map(r => r.data),
     });
   } catch (err) {
     console.error('[data]', err);

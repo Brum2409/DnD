@@ -185,6 +185,12 @@
       transition: background var(--transition);
     }
     .char-mini-card:hover { background: var(--color-surface-2); }
+    /* NPC cards get a subtle purple tint to distinguish from hero cards */
+    .char-mini-card.npc-card {
+      background: rgba(90, 60, 130, 0.07);
+      border-left: 2px solid rgba(120, 80, 180, 0.35);
+    }
+    .char-mini-card.npc-card:hover { background: rgba(90, 60, 130, 0.14); }
 
     .char-mini-top {
       display: flex; align-items: center; gap: 0.65rem; margin-bottom: 0.55rem;
@@ -451,7 +457,7 @@
       .scene-area   { flex: 0 0 32%; min-height: 140px; }
       .char-panel   {
         position: fixed; bottom: 0; left: 0; right: 0;
-        width: auto; height: 240px;
+        width: auto; height: 250px;
         transform: translateY(100%);
         transition: transform 0.3s ease;
         z-index: 50;
@@ -459,10 +465,44 @@
         border-top: 2px solid var(--color-primary-dark);
         flex-direction: row; overflow-x: auto; overflow-y: hidden;
         flex-wrap: nowrap;
+        align-items: stretch;
       }
       .char-panel.open { transform: translateY(0); }
       .char-mini-card { min-width: 170px; border-right: 1px solid var(--color-border); border-bottom: none; }
-      .char-panel-header { display: none; }
+
+      /* Section labels become vertical text strips on mobile */
+      .char-panel-header {
+        display: flex;
+        writing-mode: vertical-lr;
+        transform: rotate(180deg);
+        min-width: 26px;
+        width: 26px;
+        flex-shrink: 0;
+        border-right: 1px solid var(--color-border);
+        border-bottom: none;
+        padding: 0.6rem 0.2rem;
+        font-size: 0.58rem;
+        letter-spacing: 0.06em;
+        align-items: center;
+        justify-content: flex-end;
+        background: var(--color-surface-2);
+        cursor: default;
+        color: var(--color-primary);
+      }
+      #npc-panel-header {
+        color: var(--color-accent, #a07ad0);
+        background: rgba(90,60,130,0.1);
+        border-color: rgba(120,80,180,0.3);
+      }
+      #known-chars-panel-header {
+        color: var(--color-text-faint);
+        font-size: 0.52rem;
+        cursor: pointer;
+        background: var(--color-surface-3);
+      }
+      /* Known chars section: collapsed on mobile, show a minimal tap strip */
+      #known-chars-cards { display: none !important; }
+
       .msg-dm   { max-width: 95%; }
       .msg-player { max-width: 90%; }
       .chat-textarea { font-size: 16px; /* prevent zoom on iOS */ }
@@ -658,7 +698,7 @@
 </div><!-- .game-wrap -->
 
 <!-- Mobile char panel toggle -->
-<button class="mobile-char-toggle" id="mobile-char-btn">👥 Party</button>
+<button class="mobile-char-toggle" id="mobile-char-btn">⚔️ Heroes</button>
 
 <!-- Character slide-over -->
 <div class="slideover-backdrop" id="slideover-backdrop"></div>
@@ -679,7 +719,7 @@
 import { initPage } from './js/auth.js';
 import { initCommonUI } from './js/app.js';
 import {
-  getActiveStory, getStory, saveStory, getCharacter, getItem, getNPCsForStory,
+  getActiveStory, getStory, saveStory, getCharacter, getItem, getSpell, getNPCsForStory,
 } from './js/db.js';
 import { showToast, getModifier, formatModifier } from './js/utils.js';
 import { sendDMMessage } from './js/dm-engine.js';
@@ -777,6 +817,38 @@ function pollSceneImage(storyId, sceneId) {
   }, 2000);
 }
 
+// ── Spell helpers ─────────────────────────────────────────────
+
+const SCHOOL_COLORS = {
+  Evocation:     '#e05050', Abjuration:   '#5090e0', Conjuration: '#50c080',
+  Divination:    '#a0c0f0', Enchantment:  '#e080d0', Illusion:    '#9060c0',
+  Necromancy:    '#60c060', Transmutation:'#e0a030',
+};
+
+function spellLevelLabel(level) {
+  return level === 0 ? 'Cantrip' : `Level ${level}`;
+}
+
+/**
+ * Render compact spell slot pips for the mini-card.
+ * Shows one row per slot level with filled/empty pips.
+ */
+function buildSpellSlotPips(char) {
+  if (!char.spellSlots || !Object.keys(char.spellSlots).length) return '';
+  const rows = Object.entries(char.spellSlots).map(([lvl, s]) => {
+    const available = s.total - s.used;
+    const pips = Array.from({ length: s.total }, (_, i) =>
+      `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;margin:1px;background:${i < available ? '#a080e0' : 'var(--color-surface-3)'};border:1px solid rgba(160,128,224,0.4);"></span>`
+    ).join('');
+    const pactLabel = s.pactMagic ? '✦' : '';
+    return `<div style="display:flex;align-items:center;gap:3px;line-height:1;">
+      <span style="font-family:var(--font-ui);font-size:0.55rem;color:var(--color-text-faint);min-width:14px;">L${lvl}${pactLabel}</span>
+      ${pips}
+    </div>`;
+  }).join('');
+  return `<div style="margin-top:0.35rem;padding-top:0.3rem;border-top:1px solid var(--color-border);">${rows}</div>`;
+}
+
 // ── Character panel ───────────────────────────────────────────
 function renderCharPanel() {
   if (!activeStory) return;
@@ -812,6 +884,7 @@ function renderCharPanel() {
         </div>
         ${conditionHtml ? `<div class="condition-chips">${conditionHtml}</div>` : ''}
         <div class="char-gold">💰 ${ch.gold || 0} gp</div>
+        ${buildSpellSlotPips(ch)}
       </div>
     `;
   }).join('');
@@ -827,6 +900,10 @@ function renderCharPanel() {
 
   // NPC section — world characters encountered in this story
   renderNPCPanel();
+
+  // Update mobile toggle label with current counts
+  const isOpen = document.getElementById('char-panel').classList.contains('open');
+  updateMobileToggleLabel(isOpen);
 }
 
 function buildNpcCardHtml(npc) {
@@ -1049,6 +1126,7 @@ function appendToolBadge(summary) {
   else if (summary.includes('❤️') || summary.includes('heal')) el.classList.add('tool-heal');
   else if (summary.includes('🎒') || summary.includes('item')) el.classList.add('tool-item');
   else if (summary.includes('🗺️') || summary.includes('Scene')) el.classList.add('tool-scene');
+  else if (summary.includes('🖼️') || summary.includes('image refresh')) el.classList.add('tool-scene');
 
   el.textContent = summary;
   container.appendChild(el);
@@ -1072,6 +1150,12 @@ function showTypingIndicator() {
 
 function hideTypingIndicator() {
   if (typingEl) { typingEl.remove(); typingEl = null; }
+}
+
+function updateTypingStatus(message) {
+  if (!typingEl) return;
+  const label = typingEl.querySelector('.typing-label');
+  if (label) label.textContent = message;
 }
 
 function scrollChatBottom(smooth = true) {
@@ -1142,8 +1226,24 @@ async function handleSend(overrideMessage) {
 
   showTypingIndicator();
 
+  // Track whether live tool badges were already appended via the progress callback
+  let liveToolBadgesShown = false;
+
   try {
-    const result = await sendDMMessage(activeStory.id, message);
+    const result = await sendDMMessage(activeStory.id, message, (progress) => {
+      if (progress.type === 'status') {
+        // Update the typing indicator to show what the DM is doing right now
+        updateTypingStatus(progress.message + '…');
+      } else if (progress.type === 'tool_result' && progress.summary) {
+        // Insert the tool badge immediately — player sees each action as it happens
+        // The typing indicator moves below it so new badges stack above the dots
+        hideTypingIndicator();
+        appendToolBadge(progress.summary);
+        showTypingIndicator();
+        scrollChatBottom();
+        liveToolBadgesShown = true;
+      }
+    });
 
     hideTypingIndicator();
 
@@ -1162,10 +1262,12 @@ async function handleSend(overrideMessage) {
       showToast('Session history compressed to save context.', 'info');
     }
 
-    // Show tool badges BEFORE DM response
-    result.toolSummaries.forEach(summary => {
-      appendToolBadge(summary);
-    });
+    // Tool badges were already appended live via the callback — only fall back
+    // to batch rendering if the callback was never triggered (e.g., no tools used
+    // on first response, or older call path)
+    if (!liveToolBadgesShown) {
+      result.toolSummaries.forEach(summary => appendToolBadge(summary));
+    }
 
     // Show DM response
     appendMessageEl('assistant', result.cleanResponse);
@@ -1184,11 +1286,11 @@ async function handleSend(overrideMessage) {
     renderCharPanel();
     renderNPCPanel();
 
-    // If scene advanced, update scene display
-    if (result.sceneAdvanced) {
+    // If scene advanced or scene image refreshed, update scene display
+    if (result.sceneAdvanced || result.sceneImageRefreshed) {
       activeStory = getStory(activeStory.id) || activeStory;
       renderScene();
-      showToast('Scene advances!', 'info');
+      if (result.sceneAdvanced) showToast('Scene advances!', 'info');
     }
 
     // Check for hero deaths only (not NPC/enemy deaths)
@@ -1271,6 +1373,90 @@ document.getElementById('regen-scene-btn').addEventListener('click', async () =>
 });
 
 // ── Character slide-over ──────────────────────────────────────
+/**
+ * Build the spell slots + known spells section for the character slideover.
+ */
+function buildSlideoverSpellSection(char) {
+  const hasSlots  = char.spellSlots && Object.keys(char.spellSlots).length > 0;
+  const hasSpells = (char.spells || []).length > 0;
+  if (!hasSlots && !hasSpells) return '';
+
+  // ── Spell slot grid ──────────────────────────────────────────
+  let slotHtml = '';
+  if (hasSlots) {
+    const slotRows = Object.entries(char.spellSlots).map(([lvl, s]) => {
+      const available = s.total - s.used;
+      const pips = Array.from({ length: s.total }, (_, i) => {
+        const filled = i < available;
+        return `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${filled ? '#a080e0' : 'var(--color-surface-3)'};border:1px solid rgba(160,128,224,0.5);"></span>`;
+      }).join('');
+      const pactLabel = s.pactMagic ? ' <span style="font-size:0.6rem;color:#a080e0;">(Pact✦)</span>' : '';
+      return `<div style="display:flex;align-items:center;gap:0.5rem;padding:0.2rem 0;">
+        <span style="font-family:var(--font-ui);font-size:0.72rem;color:var(--color-text-faint);min-width:48px;">Level ${lvl}${pactLabel}</span>
+        <div style="display:flex;gap:3px;flex-wrap:wrap;">${pips}</div>
+        <span style="font-family:var(--font-ui);font-size:0.7rem;color:var(--color-text-faint);margin-left:auto;">${available}/${s.total}</span>
+      </div>`;
+    }).join('');
+    slotHtml = `
+      <div style="margin-bottom:1rem;">
+        <div style="font-family:var(--font-display);font-size:0.75rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--color-text-faint);margin-bottom:0.5rem;">Spell Slots</div>
+        ${slotRows}
+      </div>`;
+  }
+
+  // ── Known spells list ─────────────────────────────────────────
+  let spellListHtml = '';
+  if (hasSpells) {
+    // Group by level
+    const spellObjs = (char.spells || []).map(id => getSpell(id)).filter(Boolean);
+    const byLevel = {};
+    spellObjs.forEach(sp => {
+      const k = sp.level;
+      if (!byLevel[k]) byLevel[k] = [];
+      byLevel[k].push(sp);
+    });
+
+    const groups = Object.keys(byLevel).sort((a, b) => Number(a) - Number(b)).map(lvl => {
+      const spells = byLevel[lvl].map(sp => {
+        const schoolColor = SCHOOL_COLORS[sp.school] || '#888';
+        const icon = sp.iconBase64
+          ? `<img src="${sp.iconBase64}" style="width:22px;height:22px;border-radius:3px;object-fit:cover;flex-shrink:0;" />`
+          : `<span style="width:22px;height:22px;border-radius:3px;background:${schoolColor}22;display:inline-flex;align-items:center;justify-content:center;font-size:0.9rem;flex-shrink:0;">✨</span>`;
+        const detailParts = [sp.castingTime, sp.range, sp.duration].filter(Boolean).join(' · ');
+        const dmgStr = sp.damage ? ` <span style="color:${schoolColor};font-weight:600;">${escHtml(sp.damage)} ${escHtml(sp.damageType || '')}</span>` : '';
+        const tags = [
+          sp.concentration ? '<span style="background:rgba(200,160,50,0.15);color:#c8a000;border-radius:3px;padding:1px 4px;font-size:0.6rem;">CONC</span>' : '',
+          sp.ritual ? '<span style="background:rgba(80,180,120,0.15);color:#50b478;border-radius:3px;padding:1px 4px;font-size:0.6rem;">RITUAL</span>' : '',
+        ].filter(Boolean).join(' ');
+        return `<div style="display:flex;align-items:flex-start;gap:0.5rem;padding:0.35rem 0;border-bottom:1px solid var(--color-border);">
+          ${icon}
+          <div style="flex:1;min-width:0;">
+            <div style="font-family:var(--font-ui);font-size:0.8rem;font-weight:600;display:flex;align-items:center;gap:0.3rem;flex-wrap:wrap;">
+              ${escHtml(sp.name)}${dmgStr}
+              <span style="font-size:0.7rem;color:${schoolColor};font-weight:normal;">${escHtml(sp.school)}</span>
+              ${tags}
+            </div>
+            ${detailParts ? `<div style="font-family:var(--font-ui);font-size:0.68rem;color:var(--color-text-faint);">${escHtml(detailParts)}</div>` : ''}
+            ${sp.description ? `<div style="font-family:var(--font-body);font-size:0.72rem;color:var(--color-text-muted);margin-top:0.15rem;line-height:1.4;">${escHtml(sp.description.slice(0, 120))}${sp.description.length > 120 ? '…' : ''}</div>` : ''}
+          </div>
+        </div>`;
+      }).join('');
+      return `<div style="margin-bottom:0.5rem;">
+        <div style="font-family:var(--font-ui);font-size:0.65rem;text-transform:uppercase;letter-spacing:0.07em;color:var(--color-text-faint);margin-bottom:0.25rem;">${spellLevelLabel(Number(lvl))}</div>
+        ${spells}
+      </div>`;
+    }).join('');
+
+    spellListHtml = `
+      <div style="margin-bottom:1rem;">
+        <div style="font-family:var(--font-display);font-size:0.75rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--color-text-faint);margin-bottom:0.5rem;">Spells (${spellObjs.length})</div>
+        ${groups}
+      </div>`;
+  }
+
+  return slotHtml + spellListHtml;
+}
+
 function openSlideover(charId) {
   const char = getCharacter(charId);
   if (!char) return;
@@ -1288,12 +1474,13 @@ function openSlideover(charId) {
 
   const invHtml = char.inventory.map(inst => {
     const item = getItem(inst.itemId);
-    if (!item) return '';
+    const icon = item?.iconBase64
+      ? `<img src="${item.iconBase64}" style="width:24px;height:24px;border-radius:3px;vertical-align:middle;" />`
+      : '⚔️';
+    const name = item ? escHtml(item.name) : `<span style="color:var(--color-text-faint);font-style:italic;">Loading…</span>`;
     return `<div style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid var(--color-border);">
-      <span style="font-size:0.85rem;">
-        ${item.iconBase64 ? `<img src="${item.iconBase64}" style="width:24px;height:24px;border-radius:3px;vertical-align:middle;" />` : '⚔️'}
-      </span>
-      <span style="font-family:var(--font-ui);font-size:0.8rem;flex:1;">${escHtml(item.name)}</span>
+      <span style="font-size:0.85rem;">${icon}</span>
+      <span style="font-family:var(--font-ui);font-size:0.8rem;flex:1;">${name}</span>
       <span style="font-family:var(--font-ui);font-size:0.7rem;color:var(--color-text-faint);">x${inst.quantity}</span>
     </div>`;
   }).join('');
@@ -1342,6 +1529,8 @@ function openSlideover(charId) {
       </div>
     ` : ''}
 
+    ${buildSlideoverSpellSection(char)}
+
     ${char.backstory ? `
       <div>
         <div style="font-family:var(--font-display);font-size:0.75rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--color-text-faint);margin-bottom:0.4rem;">Backstory</div>
@@ -1372,11 +1561,28 @@ document.getElementById('death-dismiss').addEventListener('click', () => {
 });
 
 // ── Mobile char panel toggle ──────────────────────────────────
+function updateMobileToggleLabel(isOpen) {
+  if (isOpen) {
+    document.getElementById('mobile-char-btn').textContent = '✕ Close';
+    return;
+  }
+  if (!activeStory) {
+    document.getElementById('mobile-char-btn').textContent = '⚔️ Heroes';
+    return;
+  }
+  const heroCount = activeStory.characterIds.length;
+  const currentScene = activeStory.scenes[activeStory.currentSceneIndex];
+  const npcCount = (currentScene?.npcs || []).length;
+  const label = npcCount > 0
+    ? `⚔️ ${heroCount} Heroes · 🎭 ${npcCount} NPCs`
+    : `⚔️ ${heroCount} Heroes`;
+  document.getElementById('mobile-char-btn').textContent = label;
+}
+
 document.getElementById('mobile-char-btn').addEventListener('click', () => {
   const panel = document.getElementById('char-panel');
   panel.classList.toggle('open');
-  document.getElementById('mobile-char-btn').textContent =
-    panel.classList.contains('open') ? '✕ Close' : '👥 Party';
+  updateMobileToggleLabel(panel.classList.contains('open'));
 });
 
 // ── Utilities ─────────────────────────────────────────────────

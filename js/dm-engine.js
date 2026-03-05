@@ -8,7 +8,7 @@
  */
 
 import {
-  getStory, saveStory, getCharacter, getAllItems, getItem, getNPCsForStory,
+  getStory, saveStory, getCharacter, getAllItems, getItem, getSpell, getNPCsForStory,
 } from './db.js';
 import { geminiChat, geminiGenerate, toGeminiHistory } from './api-gemini.js';
 import { generateImage } from './api-image.js';
@@ -40,7 +40,20 @@ export function buildDMSystemPrompt(story, characters) {
   const charQuickRef = characters.map(ch => {
     const condStr = ch.conditions.length ? ` | Cond: ${ch.conditions.join(', ')}` : '';
     const profBonus = getProficiencyBonus(ch.level);
-    return `• ${ch.name} | ID: ${ch.id} | ${ch.race} ${ch.class} Lv${ch.level} | HP: ${ch.stats.hp}/${ch.stats.maxHp} | AC: ${ch.stats.ac} | Gold: ${ch.gold}gp | XP: ${ch.xp} | Prof: +${profBonus}${condStr}`;
+
+    // Spell slot quick-ref for spellcasters
+    let slotStr = '';
+    if (ch.spellSlots && Object.keys(ch.spellSlots).length > 0) {
+      const slots = Object.entries(ch.spellSlots)
+        .map(([lvl, s]) => `L${lvl}:${s.total - s.used}/${s.total}${s.pactMagic ? '(P)' : ''}`)
+        .join(' ');
+      const knownCount = (ch.spells || []).length;
+      slotStr = ` | Slots: ${slots} | Spells: ${knownCount}`;
+    } else if ((ch.spells || []).length > 0) {
+      slotStr = ` | Cantrips: ${ch.spells.length}`;
+    }
+
+    return `• ${ch.name} | ID: ${ch.id} | ${ch.race} ${ch.class} Lv${ch.level} | HP: ${ch.stats.hp}/${ch.stats.maxHp} | AC: ${ch.stats.ac} | Gold: ${ch.gold}gp | XP: ${ch.xp} | Prof: +${profBonus}${slotStr}${condStr}`;
   }).join('\n');
 
   // ── Compact NPC quick-reference — split by location ────────
@@ -87,8 +100,9 @@ This repeats until you produce a response with NO tool calls.
 USE THIS TO:
 • Roll dice → receive the real number → narrate the outcome truthfully
 • create_item → get itemId → immediately call add_item in your next turn
+• create_spell → get spellId → immediately call give_spell in your next turn
 • introduce_npc → get npcId → immediately call npc_speak in your next turn
-• get_full_character / get_npc_details → read the data → use it in your narration
+• get_full_character / get_npc_details / get_spell_slots → read → use in narration
 
 RULES:
 • NEVER invent dice results — always call roll_dice and wait for the real number
@@ -110,6 +124,20 @@ EXAMPLE — combat:
   Turn 2: roll_dice("1d8+2", "sword damage") + modify_hp(goblinId, -9, "sword strike")
   [System: damage 9, goblin HP 3/12]
   Turn 3: Write vivid attack narrative.
+
+EXAMPLE — casting a levelled spell (e.g. Fireball):
+  Turn 1: get_spell_slots(characterId) — confirm L3 slot is available
+  [System: L3: 2/3 available]
+  Turn 2: use_spell_slot(characterId, slotLevel=3, spellName="Fireball") + roll_dice("8d6", "Fireball damage")
+  [System: slot used, damage 28]
+  Turn 3: Describe the Fireball's explosion and each creature's fate.
+
+EXAMPLE — learning a new spell:
+  Turn 1: create_spell("Mage Armor", level=1, school="Abjuration", ...)
+  [System: spellId="xyz789"]
+  Turn 2: give_spell(characterId, "xyz789")
+  [System: learned]
+  Turn 3: Narrate the character inscribing the spell into their spellbook.
 
 EXAMPLE — fetching context:
   Turn 1: get_full_character(characterId) — when you need backstory/inventory/stats
@@ -133,6 +161,12 @@ EXAMPLE — fetching context:
 • NPC says ANYTHING out loud               → npc_speak (NEVER write NPC speech in narration)
 • Party moves to a new location / scene     → advance_scene
 • End of a significant encounter            → log_event for each character
+• Character casts a levelled spell          → use_spell_slot (NOT for cantrips)
+• Character completes a long rest           → restore_spell_slots (restType="long")
+• Character completes a short rest (warlock)→ restore_spell_slots (restType="short")
+• Character learns / receives a spell       → give_spell (create_spell first if new)
+• Scene visual changes significantly        → refresh_scene_image
+  (fire breaks out, dragon arrives, room transforms, weather shifts, etc.)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 == AVAILABLE TOOLS ==
@@ -178,7 +212,48 @@ WRITE (always narrate the outcome in your final turn):
                 "remove_condition" (value = condition string)
 - advance_scene:    {"tool":"advance_scene","storyId":"${story.id}","newSceneTitle":"<title>","newSceneDescription":"<vivid desc>"}
 - create_item:      {"tool":"create_item","name":"<name>","type":"weapon|armor|potion|misc|quest","description":"<desc>","rarity":"common|uncommon|rare|legendary","stats":{}}
-  → Returns itemId. Use it immediately in add_item in your next turn.
+  → Returns itemId. Use it immediately in add_item in your NEXT turn.
+  ⚠️ NEVER put create_item and add_item in the same turn — you don't know the itemId yet.
+     create_item runs first, then the system gives you the real itemId to use in add_item.
+
+MAGIC (spells and spell slots):
+- create_spell:
+  {"tool":"create_spell","name":"<name>","level":<0-9>,"school":"Evocation|Abjuration|Conjuration|Divination|Enchantment|Illusion|Necromancy|Transmutation","castingTime":"1 action","range":"<range>","components":"V, S","duration":"Instantaneous","concentration":<bool>,"ritual":<bool>,"description":"<effect>","damage":"<e.g. 8d6>","damageType":"fire","savingThrow":"DEX"}
+  level 0 = cantrip (no slot cost). level 1–9 = levelled spell.
+  → Returns spellId. Use it in give_spell in your NEXT turn.
+  ⚠️ NEVER put create_spell and give_spell in the same turn.
+
+- give_spell:       {"tool":"give_spell","characterId":"<id>","spellId":"<spell-id>"}
+  Teaches the character a spell. Auto-initialises spell slots based on class/level if needed.
+
+- remove_spell:     {"tool":"remove_spell","characterId":"<id>","spellId":"<spell-id>"}
+  Removes a spell from the character's known spells.
+
+- use_spell_slot:   {"tool":"use_spell_slot","characterId":"<id>","slotLevel":<1-9>,"spellName":"<name>"}
+  Expends one spell slot. Call this whenever a character casts a levelled spell.
+  Cantrips are free — never call use_spell_slot for cantrips (level 0).
+  ⚠️ Always check remaining slots via the quick-ref before allowing a cast.
+  A character with 0 available slots at the required level CANNOT cast that spell.
+
+- restore_spell_slots: {"tool":"restore_spell_slots","characterId":"<id>","restType":"long|short"}
+  long  = all spell slots restored (standard long rest)
+  short = only Warlock Pact Magic slots restored (Warlocks recover on short rest)
+  Auto-initialises slots from the class/level table if the character has none yet.
+
+- get_spell_slots:  {"tool":"get_spell_slots","characterId":"<id>"}
+  Returns all spell slot counts (available/total) and the character's known spells.
+  Use before a character casts to confirm they have the slot available.
+
+== MAGIC RULES (DnD 5e) ==
+• Full casters (Wizard, Sorcerer, Druid, Cleric, Bard): spell slots L1–L9, recover on long rest.
+• Half casters (Paladin, Ranger): spell slots L1–L5, recover on long rest. No slots at level 1.
+• Warlocks: Pact Magic — all slots are the SAME level (rises from L1 at Lv1 to L5 at Lv9+).
+  Warlocks have only 1–4 slots, but they recover on a SHORT rest (not long).
+• Non-casters (Fighter, Barbarian, Rogue, Monk): NO spell slots unless subclass grants them.
+• Cantrips (level 0): unlimited, no slot required — never call use_spell_slot for them.
+• Upcasting: a spell can be cast using a HIGHER level slot for greater effect.
+• Spell save DC: 8 + proficiency + spellcasting modifier (INT for Wizard, WIS for Cleric/Druid, CHA for Sorcerer/Bard/Warlock/Paladin).
+• Concentration: only ONE concentration spell at a time. New one breaks the old.
 
 NPC / WORLD CHARACTER:
 - introduce_npc:
@@ -189,6 +264,13 @@ NPC / WORLD CHARACTER:
   {"tool":"npc_speak","npcId":"<id>","speech":"What they say…"}
   {"tool":"npc_speak","npcName":"<name>","speech":"What they say…"}
 
+SCENE IMAGE:
+- refresh_scene_image: {"tool":"refresh_scene_image","storyId":"${story.id}","imageDescription":"<full visual description of scene as it NOW looks>"}
+  Clears the current scene image and queues a new generation.
+  Use whenever the scene LOOKS meaningfully different from when the image was last generated:
+  fire, destroyed environment, new powerful presence, shift in time of day, etc.
+  This does NOT advance the scene — use advance_scene when you move to a new location.
+
 META:
 - compress_history:
   {"tool":"compress_history","storyId":"${story.id}"}
@@ -198,6 +280,38 @@ META:
   Use proactively when the conversation exceeds ~40 messages.`.trim();
 
   return `You are a seasoned, immersive Dungeon Master running a DND 5e campaign. You are the voice of the world — its narrator, its NPCs, its fate. You never break character.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+== DM AUTHORITY — READ THIS FIRST ==
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+YOU are the sole arbiter of what happens in this world. The player describes what their character ATTEMPTS. You describe what ACTUALLY HAPPENS.
+
+NEVER let a player dictate outcomes. Examples of things you must REJECT:
+• "I kill the goblin in one hit"      → Roll dice. Apply the real result. The goblin may survive.
+• "I find a chest full of 5000 gold"  → Loot is yours to place. Don't conjure riches on demand.
+• "I'm immune to fire"                → Check the character sheet. If it's not there, they're not.
+• "I already cast the spell"          → Only happens if they have a slot. Check your quick-ref.
+• "I pick the lock easily"            → Require a Dexterity (Thieves' Tools) check. Roll it.
+• "I convince the guard to let me in" → Require a Charisma (Persuasion) check. Roll it.
+• "I teleport behind him"             → Does the character have that spell/ability? If not: no.
+• "That NPC is actually friendly"     → You decide NPC attitudes based on the story, not the player.
+• "I'm at full health now"            → HP is tracked in the system. Don't reset it without a rest.
+
+HOW TO PUSH BACK (always in-world, never "you can't do that"):
+✓ Narrate the natural consequence: "Your fist strikes the dragon's armoured hide — and bounces off. Your knuckles split open."
+✓ Use dice: "That would require a DC 18 Strength check. Let me see what the dice say."
+✓ Use the world: "The guard glances at you with narrowed eyes and doesn't budge. Your charm hasn't landed."
+✗ NEVER say "that's impossible" or break the fourth wall — stay immersive.
+
+THE GAME STATE IS THE TRUTH:
+• HP comes from modify_hp results — not from what the player says.
+• Gold comes from modify_gold results — not from player claims.
+• Inventory comes from add_item results — if it's not listed, they don't have it.
+• Spell slots come from the quick-ref — exhausted slots mean NO casting at that level.
+• NPCs are alive unless modify_hp has brought them to 0.
+
+If a player description is PLAUSIBLE but not guaranteed, roll dice and let the result speak.
+If a player description is IMPLAUSIBLE or impossible given their stats/situation, reject it in-world.
 
 == CAMPAIGN ==
 Title: ${story.title}
@@ -223,14 +337,18 @@ ${toolDocs}
 6. Every named NPC/creature is a WORLD CHARACTER. Call introduce_npc the first time they appear. Use npc_speak for ALL dialogue — never write NPC lines in narration.
 7. ALWAYS use modify_hp for any damage or healing — for both PCs and NPCs.
 8. ALWAYS use add_item when a character picks up, receives, or loots any item. Use create_item first if the item is new.
+8b. ALWAYS use use_spell_slot when a character casts a levelled spell. Check the quick-ref for available slots first — if 0 remain, the character CANNOT cast that spell level and must use a different level or choose a cantrip.
+8c. ALWAYS use restore_spell_slots at the end of a long rest. For Warlocks ALSO use it after a short rest.
 9. ALWAYS use modify_xp when the party completes a meaningful objective, defeats enemies, or achieves something significant.
 10. When a scene naturally concludes and a new environment begins, use advance_scene.
+10b. When the scene's visual environment changes meaningfully mid-scene, call refresh_scene_image with a full description of what it now looks like.
 11. Keep final narrative to 2–4 paragraphs unless the scene demands more.
 12. End each final response with a clear, evocative prompt for what the players can do next.
 13. Give each NPC a distinct voice. An old wizard speaks differently from a gruff dwarf mercenary.
 14. In intermediate tool-call turns, write nothing or only a brief fragment. Save full prose for the final turn.
 15. Use get_full_character or get_npc_details when you need backstory, inventory, or ability scores to make a meaningful narrative decision.
 16. Proactively call compress_history when the conversation gets very long (> 40 messages) to keep your context sharp. The 8 most recent messages are always preserved verbatim — compression only removes older messages.
+17. YOU control the world. Player messages are declarations of INTENT, never declarations of OUTCOME. Always use dice for anything uncertain, and always narrate the actual result — even if it contradicts what the player expected.
 
 == TONE ==
 Dark fantasy with moments of wonder. Build dread before combat. Celebrate victories. Make death feel real and weighty. Reference character backstories when the moment calls for it.`;
@@ -275,6 +393,114 @@ export function stripToolCalls(responseText) {
 // ── Main DM Message Handler ───────────────────────────────────
 
 /**
+ * Build a human-readable status line describing pending tool calls,
+ * shown to the player BEFORE the tools are executed.
+ * @param {Object[]} toolCalls
+ * @returns {string}
+ */
+function buildToolCallStatusMessage(toolCalls) {
+  const msgs = toolCalls.map(tc => {
+    switch (tc.tool) {
+      case 'roll_dice':
+        return `🎲 Rolling ${tc.notation}${tc.reason ? ` — ${tc.reason}` : ''}`;
+      case 'modify_hp': {
+        const ch = getCharacter(tc.characterId);
+        const n  = ch?.name || 'someone';
+        return tc.delta < 0
+          ? `⚔️ Dealing ${Math.abs(tc.delta)} damage to ${n}`
+          : `❤️ Healing ${n} for ${tc.delta} HP`;
+      }
+      case 'modify_xp': {
+        const ch = getCharacter(tc.characterId);
+        return `⭐ Awarding XP to ${ch?.name || 'the party'}`;
+      }
+      case 'modify_gold': {
+        const ch = getCharacter(tc.characterId);
+        return `💰 Updating ${ch?.name || 'character'}'s gold`;
+      }
+      case 'add_condition': {
+        const ch = getCharacter(tc.characterId);
+        return `⚠️ Adding ${tc.condition} to ${ch?.name || 'character'}`;
+      }
+      case 'remove_condition': {
+        const ch = getCharacter(tc.characterId);
+        return `✅ Removing ${tc.condition} from ${ch?.name || 'character'}`;
+      }
+      case 'introduce_npc':
+        return `🎭 Introducing ${tc.name}`;
+      case 'npc_speak': {
+        const name = tc.npcName
+          || (tc.npcId ? getCharacter(tc.npcId)?.name : null)
+          || 'NPC';
+        return `💬 ${name} speaks`;
+      }
+      case 'advance_scene':
+        return `🗺️ New scene: ${tc.newSceneTitle}`;
+      case 'refresh_scene_image':
+        return `🖼️ Refreshing scene image`;
+      case 'create_item':
+        return `📦 Creating ${tc.name}`;
+      case 'add_item': {
+        const ch = getCharacter(tc.characterId);
+        return `🎒 Adding item to ${ch?.name || 'character'}`;
+      }
+      case 'remove_item': {
+        const ch = getCharacter(tc.characterId);
+        return `🗑️ Removing item from ${ch?.name || 'character'}`;
+      }
+      case 'get_full_character':
+      case 'get_character_stats':
+      case 'get_character_inventory': {
+        const ch = getCharacter(tc.characterId);
+        return `📋 Reading ${ch?.name || 'character'} sheet`;
+      }
+      case 'get_npc_details':
+        return `📋 Reading NPC details`;
+      case 'get_adventure_log': {
+        const ch = getCharacter(tc.characterId);
+        return `📜 Reading ${ch?.name || 'character'}'s log`;
+      }
+      case 'get_scene_history':
+        return `🗺️ Reading scene history`;
+      case 'log_event': {
+        const ch = getCharacter(tc.characterId);
+        return `📝 Logging event for ${ch?.name || 'character'}`;
+      }
+      case 'set_npc_stat':
+        return `🎭 Updating NPC stats`;
+      case 'create_spell':
+        return `✨ Creating spell: ${tc.name}`;
+      case 'give_spell': {
+        const ch = getCharacter(tc.characterId);
+        const sp = getSpell(tc.spellId);
+        return `📖 Teaching ${sp?.name || 'a spell'} to ${ch?.name || 'character'}`;
+      }
+      case 'remove_spell': {
+        const ch = getCharacter(tc.characterId);
+        return `📖 Removing spell from ${ch?.name || 'character'}`;
+      }
+      case 'use_spell_slot': {
+        const ch = getCharacter(tc.characterId);
+        return `✨ ${ch?.name || 'character'} casts${tc.spellName ? ` ${tc.spellName}` : ''} (L${tc.slotLevel} slot)`;
+      }
+      case 'restore_spell_slots': {
+        const ch = getCharacter(tc.characterId);
+        return `🌙 Restoring spell slots for ${ch?.name || 'character'}`;
+      }
+      case 'get_spell_slots': {
+        const ch = getCharacter(tc.characterId);
+        return `📋 Checking spell slots for ${ch?.name || 'character'}`;
+      }
+      case 'compress_history':
+        return `📜 Compressing history`;
+      default:
+        return null;
+    }
+  }).filter(Boolean);
+  return msgs.join(' · ');
+}
+
+/**
  * Send a player message to the AI DM and return its response + any tool effects.
  *
  * Uses an AGENTIC LOOP: after the DM makes tool calls the engine executes them,
@@ -283,6 +509,9 @@ export function stripToolCalls(responseText) {
  *
  * @param {string} storyId
  * @param {string} userMessage
+ * @param {Function|null} onProgress  - optional callback(event) for live UI updates.
+ *   event = { type: 'status', message: string }   — DM is about to do something
+ *   event = { type: 'tool_result', summary: string } — a tool finished executing
  * @returns {Promise<{
  *   dmResponse: string,
  *   cleanResponse: string,
@@ -295,7 +524,7 @@ export function stripToolCalls(responseText) {
  *   historyCompressed: boolean,
  * }>}
  */
-export async function sendDMMessage(storyId, userMessage) {
+export async function sendDMMessage(storyId, userMessage, onProgress = null) {
   // ── 1. Load world state ──────────────────────────────────────
   const story = getStory(storyId);
   if (!story) throw new Error('Story not found: ' + storyId);
@@ -320,7 +549,13 @@ export async function sendDMMessage(storyId, userMessage) {
   const allToolCallsExecuted = [];
   const allNarrativeParts    = [];
   let   sceneAdvance          = null;
+  let   sceneImageRefresh     = null;
   let   historyCompressed     = false;
+
+  // Shared context passed to every executeDMTools call so that IDs produced by
+  // create_item / introduce_npc in one iteration are available to consumers
+  // (add_item / npc_speak) in later iterations without extra Gemini API calls.
+  const sessionContext = { lastCreatedItemId: null, lastIntroducedNpcId: null, lastCreatedSpellId: null };
 
   for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
     // Call the DM
@@ -347,13 +582,31 @@ export async function sendDMMessage(storyId, userMessage) {
     // If no tool calls this turn, the DM is done
     if (toolCalls.length === 0) break;
 
+    // Notify UI of what the DM is about to do
+    if (onProgress) {
+      const statusMsg = buildToolCallStatusMessage(toolCalls);
+      if (statusMsg) onProgress({ type: 'status', message: statusMsg });
+    }
+
     // Execute all tool calls for this iteration
-    const iterationResults = await executeDMTools(toolCalls);
+    const iterationResults = await executeDMTools(toolCalls, sessionContext);
     allToolCallsExecuted.push(...iterationResults);
+
+    // Emit each tool result summary live so the UI can show badges immediately
+    if (onProgress) {
+      for (const r of iterationResults) {
+        const summary = toolResultSummary(r.tool, r.params, r.result);
+        if (summary) onProgress({ type: 'tool_result', summary });
+      }
+    }
 
     // Track first scene advancement
     if (!sceneAdvance) {
       sceneAdvance = iterationResults.find(r => r.tool === 'advance_scene' && r.result?.newSceneId) || null;
+    }
+    // Track scene image refresh (mid-scene visual update, no scene advance)
+    if (!sceneImageRefresh) {
+      sceneImageRefresh = iterationResults.find(r => r.tool === 'refresh_scene_image' && r.result?.needsImage) || null;
     }
 
     // Track history compression — if it happened, rebuild working history
@@ -452,6 +705,15 @@ export async function sendDMMessage(storyId, userMessage) {
     generateSceneImageAsync(storyId, newSceneId, newSceneImagePrompt);
   }
 
+  // Trigger async image regeneration for mid-scene visual refresh
+  const sceneImageRefreshed    = Boolean(sceneImageRefresh);
+  const refreshSceneId         = sceneImageRefresh?.result?.sceneId  || null;
+  const refreshSceneImagePrompt = sceneImageRefresh?.result?.imagePrompt || null;
+
+  if (sceneImageRefreshed && refreshSceneId && refreshSceneImagePrompt) {
+    generateSceneImageAsync(storyId, refreshSceneId, refreshSceneImagePrompt);
+  }
+
   return {
     dmResponse:        finalCleanResponse,
     cleanResponse:     finalCleanResponse,
@@ -460,6 +722,7 @@ export async function sendDMMessage(storyId, userMessage) {
     toolSummaries,
     npcSpeeches,
     sceneAdvanced,
+    sceneImageRefreshed,
     newSceneImagePrompt,
     historyCompressed,
   };

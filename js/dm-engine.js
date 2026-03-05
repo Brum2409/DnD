@@ -8,7 +8,7 @@
  */
 
 import {
-  getStory, saveStory, getCharacter, getAllItems, getItem, getNPCsForStory,
+  getStory, saveStory, getCharacter, getAllItems, getItem, getSpell, getNPCsForStory,
 } from './db.js';
 import { geminiChat, geminiGenerate, toGeminiHistory } from './api-gemini.js';
 import { generateImage } from './api-image.js';
@@ -40,7 +40,20 @@ export function buildDMSystemPrompt(story, characters) {
   const charQuickRef = characters.map(ch => {
     const condStr = ch.conditions.length ? ` | Cond: ${ch.conditions.join(', ')}` : '';
     const profBonus = getProficiencyBonus(ch.level);
-    return `• ${ch.name} | ID: ${ch.id} | ${ch.race} ${ch.class} Lv${ch.level} | HP: ${ch.stats.hp}/${ch.stats.maxHp} | AC: ${ch.stats.ac} | Gold: ${ch.gold}gp | XP: ${ch.xp} | Prof: +${profBonus}${condStr}`;
+
+    // Spell slot quick-ref for spellcasters
+    let slotStr = '';
+    if (ch.spellSlots && Object.keys(ch.spellSlots).length > 0) {
+      const slots = Object.entries(ch.spellSlots)
+        .map(([lvl, s]) => `L${lvl}:${s.total - s.used}/${s.total}${s.pactMagic ? '(P)' : ''}`)
+        .join(' ');
+      const knownCount = (ch.spells || []).length;
+      slotStr = ` | Slots: ${slots} | Spells: ${knownCount}`;
+    } else if ((ch.spells || []).length > 0) {
+      slotStr = ` | Cantrips: ${ch.spells.length}`;
+    }
+
+    return `• ${ch.name} | ID: ${ch.id} | ${ch.race} ${ch.class} Lv${ch.level} | HP: ${ch.stats.hp}/${ch.stats.maxHp} | AC: ${ch.stats.ac} | Gold: ${ch.gold}gp | XP: ${ch.xp} | Prof: +${profBonus}${slotStr}${condStr}`;
   }).join('\n');
 
   // ── Compact NPC quick-reference — split by location ────────
@@ -87,8 +100,9 @@ This repeats until you produce a response with NO tool calls.
 USE THIS TO:
 • Roll dice → receive the real number → narrate the outcome truthfully
 • create_item → get itemId → immediately call add_item in your next turn
+• create_spell → get spellId → immediately call give_spell in your next turn
 • introduce_npc → get npcId → immediately call npc_speak in your next turn
-• get_full_character / get_npc_details → read the data → use it in your narration
+• get_full_character / get_npc_details / get_spell_slots → read → use in narration
 
 RULES:
 • NEVER invent dice results — always call roll_dice and wait for the real number
@@ -110,6 +124,20 @@ EXAMPLE — combat:
   Turn 2: roll_dice("1d8+2", "sword damage") + modify_hp(goblinId, -9, "sword strike")
   [System: damage 9, goblin HP 3/12]
   Turn 3: Write vivid attack narrative.
+
+EXAMPLE — casting a levelled spell (e.g. Fireball):
+  Turn 1: get_spell_slots(characterId) — confirm L3 slot is available
+  [System: L3: 2/3 available]
+  Turn 2: use_spell_slot(characterId, slotLevel=3, spellName="Fireball") + roll_dice("8d6", "Fireball damage")
+  [System: slot used, damage 28]
+  Turn 3: Describe the Fireball's explosion and each creature's fate.
+
+EXAMPLE — learning a new spell:
+  Turn 1: create_spell("Mage Armor", level=1, school="Abjuration", ...)
+  [System: spellId="xyz789"]
+  Turn 2: give_spell(characterId, "xyz789")
+  [System: learned]
+  Turn 3: Narrate the character inscribing the spell into their spellbook.
 
 EXAMPLE — fetching context:
   Turn 1: get_full_character(characterId) — when you need backstory/inventory/stats
@@ -133,6 +161,10 @@ EXAMPLE — fetching context:
 • NPC says ANYTHING out loud               → npc_speak (NEVER write NPC speech in narration)
 • Party moves to a new location / scene     → advance_scene
 • End of a significant encounter            → log_event for each character
+• Character casts a levelled spell          → use_spell_slot (NOT for cantrips)
+• Character completes a long rest           → restore_spell_slots (restType="long")
+• Character completes a short rest (warlock)→ restore_spell_slots (restType="short")
+• Character learns / receives a spell       → give_spell (create_spell first if new)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 == AVAILABLE TOOLS ==
@@ -182,6 +214,45 @@ WRITE (always narrate the outcome in your final turn):
   ⚠️ NEVER put create_item and add_item in the same turn — you don't know the itemId yet.
      create_item runs first, then the system gives you the real itemId to use in add_item.
 
+MAGIC (spells and spell slots):
+- create_spell:
+  {"tool":"create_spell","name":"<name>","level":<0-9>,"school":"Evocation|Abjuration|Conjuration|Divination|Enchantment|Illusion|Necromancy|Transmutation","castingTime":"1 action","range":"<range>","components":"V, S","duration":"Instantaneous","concentration":<bool>,"ritual":<bool>,"description":"<effect>","damage":"<e.g. 8d6>","damageType":"fire","savingThrow":"DEX"}
+  level 0 = cantrip (no slot cost). level 1–9 = levelled spell.
+  → Returns spellId. Use it in give_spell in your NEXT turn.
+  ⚠️ NEVER put create_spell and give_spell in the same turn.
+
+- give_spell:       {"tool":"give_spell","characterId":"<id>","spellId":"<spell-id>"}
+  Teaches the character a spell. Auto-initialises spell slots based on class/level if needed.
+
+- remove_spell:     {"tool":"remove_spell","characterId":"<id>","spellId":"<spell-id>"}
+  Removes a spell from the character's known spells.
+
+- use_spell_slot:   {"tool":"use_spell_slot","characterId":"<id>","slotLevel":<1-9>,"spellName":"<name>"}
+  Expends one spell slot. Call this whenever a character casts a levelled spell.
+  Cantrips are free — never call use_spell_slot for cantrips (level 0).
+  ⚠️ Always check remaining slots via the quick-ref before allowing a cast.
+  A character with 0 available slots at the required level CANNOT cast that spell.
+
+- restore_spell_slots: {"tool":"restore_spell_slots","characterId":"<id>","restType":"long|short"}
+  long  = all spell slots restored (standard long rest)
+  short = only Warlock Pact Magic slots restored (Warlocks recover on short rest)
+  Auto-initialises slots from the class/level table if the character has none yet.
+
+- get_spell_slots:  {"tool":"get_spell_slots","characterId":"<id>"}
+  Returns all spell slot counts (available/total) and the character's known spells.
+  Use before a character casts to confirm they have the slot available.
+
+== MAGIC RULES (DnD 5e) ==
+• Full casters (Wizard, Sorcerer, Druid, Cleric, Bard): spell slots L1–L9, recover on long rest.
+• Half casters (Paladin, Ranger): spell slots L1–L5, recover on long rest. No slots at level 1.
+• Warlocks: Pact Magic — all slots are the SAME level (rises from L1 at Lv1 to L5 at Lv9+).
+  Warlocks have only 1–4 slots, but they recover on a SHORT rest (not long).
+• Non-casters (Fighter, Barbarian, Rogue, Monk): NO spell slots unless subclass grants them.
+• Cantrips (level 0): unlimited, no slot required — never call use_spell_slot for them.
+• Upcasting: a spell can be cast using a HIGHER level slot for greater effect.
+• Spell save DC: 8 + proficiency + spellcasting modifier (INT for Wizard, WIS for Cleric/Druid, CHA for Sorcerer/Bard/Warlock/Paladin).
+• Concentration: only ONE concentration spell at a time. New one breaks the old.
+
 NPC / WORLD CHARACTER:
 - introduce_npc:
   {"tool":"introduce_npc","storyId":"${story.id}","name":"<name>","role":"enemy|merchant|ally|neutral|boss|creature","race":"<race>","personality":"<1-2 sentences>","appearance":"<1-2 sentences>","hp":<number>,"ac":<number>}
@@ -225,6 +296,8 @@ ${toolDocs}
 6. Every named NPC/creature is a WORLD CHARACTER. Call introduce_npc the first time they appear. Use npc_speak for ALL dialogue — never write NPC lines in narration.
 7. ALWAYS use modify_hp for any damage or healing — for both PCs and NPCs.
 8. ALWAYS use add_item when a character picks up, receives, or loots any item. Use create_item first if the item is new.
+8b. ALWAYS use use_spell_slot when a character casts a levelled spell. Check the quick-ref for available slots first — if 0 remain, the character CANNOT cast that spell level and must use a different level or choose a cantrip.
+8c. ALWAYS use restore_spell_slots at the end of a long rest. For Warlocks ALSO use it after a short rest.
 9. ALWAYS use modify_xp when the party completes a meaningful objective, defeats enemies, or achieves something significant.
 10. When a scene naturally concludes and a new environment begins, use advance_scene.
 11. Keep final narrative to 2–4 paragraphs unless the scene demands more.
@@ -350,6 +423,29 @@ function buildToolCallStatusMessage(toolCalls) {
       }
       case 'set_npc_stat':
         return `🎭 Updating NPC stats`;
+      case 'create_spell':
+        return `✨ Creating spell: ${tc.name}`;
+      case 'give_spell': {
+        const ch = getCharacter(tc.characterId);
+        const sp = getSpell(tc.spellId);
+        return `📖 Teaching ${sp?.name || 'a spell'} to ${ch?.name || 'character'}`;
+      }
+      case 'remove_spell': {
+        const ch = getCharacter(tc.characterId);
+        return `📖 Removing spell from ${ch?.name || 'character'}`;
+      }
+      case 'use_spell_slot': {
+        const ch = getCharacter(tc.characterId);
+        return `✨ ${ch?.name || 'character'} casts${tc.spellName ? ` ${tc.spellName}` : ''} (L${tc.slotLevel} slot)`;
+      }
+      case 'restore_spell_slots': {
+        const ch = getCharacter(tc.characterId);
+        return `🌙 Restoring spell slots for ${ch?.name || 'character'}`;
+      }
+      case 'get_spell_slots': {
+        const ch = getCharacter(tc.characterId);
+        return `📋 Checking spell slots for ${ch?.name || 'character'}`;
+      }
       case 'compress_history':
         return `📜 Compressing history`;
       default:
@@ -413,7 +509,7 @@ export async function sendDMMessage(storyId, userMessage, onProgress = null) {
   // Shared context passed to every executeDMTools call so that IDs produced by
   // create_item / introduce_npc in one iteration are available to consumers
   // (add_item / npc_speak) in later iterations without extra Gemini API calls.
-  const sessionContext = { lastCreatedItemId: null, lastIntroducedNpcId: null };
+  const sessionContext = { lastCreatedItemId: null, lastIntroducedNpcId: null, lastCreatedSpellId: null };
 
   for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
     // Call the DM

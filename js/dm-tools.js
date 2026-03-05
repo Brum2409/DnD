@@ -29,7 +29,7 @@
 import * as db from './db.js';
 import { geminiGenerate } from './api-gemini.js';
 import { generateIconBase64 } from './api-image.js';
-import { uuid } from './utils.js';
+import { uuid, getBaseSpellSlots } from './utils.js';
 
 // ── NPC portrait generator (async, updates NPC after creation) ─
 
@@ -463,6 +463,162 @@ export const DM_TOOLS = {
     };
   },
 
+  // ─── MAGIC / SPELL tools ───────────────────────────────────
+
+  /**
+   * Create a brand-new spell and save it to the spell library.
+   * Returns spellId — use it immediately in give_spell in your next turn.
+   * For cantrips set level=0. For regular spells set level 1–9.
+   */
+  async create_spell(params) {
+    const level     = Number(params.level ?? 0);
+    const levelName = level === 0 ? 'cantrip' : `level-${level} spell`;
+
+    const lore = await geminiGenerate(
+      `Write a 2-sentence flavour lore for a DND 5e ${levelName} named "${params.name}" (${params.school || 'Evocation'} school). ${params.description || ''}. Be evocative and mysterious. Return only the lore text, no labels.`
+    ).catch(() => '');
+
+    const iconPrompt = `${params.name}, ${params.school || 'magic'} spell, DND 5e ${levelName}, glowing magical effect, fantasy art icon, dark background, detailed`;
+    const iconBase64 = await generateIconBase64(iconPrompt).catch(() => '');
+
+    const spell = {
+      id:           uuid(),
+      name:         params.name,
+      level,
+      school:       params.school       || 'Evocation',
+      castingTime:  params.castingTime  || '1 action',
+      range:        params.range        || '60 feet',
+      components:   params.components   || 'V, S',
+      duration:     params.duration     || 'Instantaneous',
+      concentration: Boolean(params.concentration),
+      ritual:        Boolean(params.ritual),
+      description:  params.description  || '',
+      lore,
+      iconBase64,
+      iconPrompt,
+      damage:       params.damage       || '',
+      damageType:   params.damageType   || '',
+      savingThrow:  params.savingThrow  || '',
+      createdAt:    Date.now(),
+    };
+
+    db.saveSpell(spell);
+    return { spellId: spell.id, spell };
+  },
+
+  /**
+   * Teach a character a spell (add to their known/prepared spells).
+   * Use create_spell first if the spell doesn't exist yet.
+   * Also auto-initialises spell slots for the character if they have none yet.
+   */
+  give_spell(params) {
+    const char = db.getCharacter(params.characterId);
+    if (!char) return { error: 'Character not found' };
+    const spell = db.getSpell(params.spellId);
+    if (!spell) return { error: `Spell ${params.spellId} not found — run create_spell first` };
+
+    // Auto-initialise spell slots the first time a spellcaster gets a spell
+    if (!char.spellSlots) {
+      const slots = getBaseSpellSlots(char.class, char.level);
+      if (slots) db.setSpellSlots(char.id, slots);
+    }
+
+    db.learnSpell(char.id, params.spellId);
+    return { success: true, spellName: spell.name, charName: char.name };
+  },
+
+  /**
+   * Remove a spell from a character's known/prepared spells.
+   */
+  remove_spell(params) {
+    const char = db.getCharacter(params.characterId);
+    if (!char) return { error: 'Character not found' };
+    const spell = db.getSpell(params.spellId);
+    db.forgetSpell(char.id, params.spellId);
+    return { success: true, spellName: spell?.name || params.spellId };
+  },
+
+  /**
+   * Expend one spell slot of the given level.
+   * Call this whenever a character casts a levelled spell (NOT cantrips — they're free).
+   */
+  use_spell_slot(params) {
+    const result = db.useSpellSlot(params.characterId, Number(params.slotLevel));
+    if (!result.ok) return { error: result.error };
+    const char = db.getCharacter(params.characterId);
+    return {
+      success:    true,
+      slotLevel:  params.slotLevel,
+      remaining:  result.remaining,
+      charName:   char?.name || params.characterId,
+      spellName:  params.spellName || '',
+    };
+  },
+
+  /**
+   * Restore spell slots after a long rest (all slots) or short rest (warlock pact only).
+   * Also auto-initialises slots from the class/level table if the character has none.
+   */
+  restore_spell_slots(params) {
+    const char = db.getCharacter(params.characterId);
+    if (!char) return { error: 'Character not found' };
+
+    const restType = params.restType || 'long';
+
+    // Auto-initialise if character has no slots yet
+    if (!char.spellSlots) {
+      const slots = getBaseSpellSlots(char.class, char.level);
+      if (!slots) return { success: true, message: `${char.name} has no spell slots (${char.class} is a non-caster)` };
+      db.setSpellSlots(char.id, slots);
+    } else {
+      db.restoreSpellSlots(char.id, restType);
+    }
+
+    const updated = db.getCharacter(char.id);
+    const slotSummary = updated?.spellSlots
+      ? Object.entries(updated.spellSlots)
+          .map(([lvl, s]) => `L${lvl}: ${s.total - s.used}/${s.total}${s.pactMagic ? ' (Pact)' : ''}`)
+          .join(', ')
+      : 'none';
+
+    return { success: true, restType, charName: char.name, slots: slotSummary };
+  },
+
+  /**
+   * Read a character's current spell slots and known spells.
+   * Use this to check if the character can cast or has slots remaining.
+   */
+  get_spell_slots(params) {
+    const char = db.getCharacter(params.characterId);
+    if (!char) return { error: 'Character not found' };
+
+    const knownSpells = (char.spells || []).map(id => {
+      const sp = db.getSpell(id);
+      return sp
+        ? { id: sp.id, name: sp.name, level: sp.level, school: sp.school, castingTime: sp.castingTime }
+        : { id, name: 'Unknown spell' };
+    });
+
+    const slotStatus = char.spellSlots
+      ? Object.entries(char.spellSlots).map(([lvl, s]) => ({
+          level: Number(lvl),
+          total: s.total,
+          used: s.used,
+          available: s.total - s.used,
+          pactMagic: Boolean(s.pactMagic),
+        }))
+      : [];
+
+    return {
+      charName:    char.name,
+      class:       char.class,
+      level:       char.level,
+      isSpellcaster: Boolean(char.spellSlots || (char.spells || []).length > 0),
+      spellSlots:  slotStatus,
+      knownSpells,
+    };
+  },
+
   // ─── META tools ────────────────────────────────────────────
 
   /**
@@ -583,6 +739,21 @@ export function formatToolResultsForRePrompt(toolResults) {
         const flag = result.isCrit ? ' ⚡ CRITICAL HIT!' : result.isCritFail ? ' 💀 CRITICAL FAIL!' : '';
         return `🎲 roll_dice(${result.notation}${result.reason ? ' — ' + result.reason : ''}): ${rollStr} = TOTAL **${result.total}**${flag}`;
       }
+      case 'create_spell':
+        return `✅ create_spell: Spell "${result.spell?.name}" created (Level ${result.spell?.level ?? 0} ${result.spell?.school}). spellId="${result.spellId}" — use this exact ID in your next give_spell call`;
+      case 'give_spell':
+        return `✅ give_spell: ${result.charName} learned "${result.spellName}"`;
+      case 'remove_spell':
+        return `✅ remove_spell: "${result.spellName}" removed from known spells`;
+      case 'use_spell_slot':
+        return `✅ use_spell_slot: Level-${result.slotLevel} slot expended${result.spellName ? ` for ${result.spellName}` : ''} — ${result.remaining} remaining for ${result.charName}`;
+      case 'restore_spell_slots':
+        return `✅ restore_spell_slots: ${result.charName} recovers slots (${result.restType} rest) — ${result.slots}`;
+      case 'get_spell_slots': {
+        const slotStr = result.spellSlots?.map(s => `L${s.level}: ${s.available}/${s.total}${s.pactMagic ? '(P)' : ''}`).join(' ') || 'none';
+        const spellStr = result.knownSpells?.map(s => `${s.name}(L${s.level})`).join(', ') || 'none';
+        return `ℹ️ ${result.charName} spell slots: ${slotStr} | Known: ${spellStr}`;
+      }
       case 'create_item':
         return `✅ create_item: Item "${result.item?.name}" created. itemId="${result.itemId}" — use this exact ID in your next add_item call`;
       case 'introduce_npc':
@@ -657,15 +828,16 @@ export function formatToolResultsForRePrompt(toolResults) {
  *     resolves correctly — without any extra Gemini API calls.
  *
  * @param {Object[]} toolCalls
- * @param {{ lastCreatedItemId: string|null, lastIntroducedNpcId: string|null }|null} sessionContext
+ * @param {{ lastCreatedItemId: string|null, lastIntroducedNpcId: string|null, lastCreatedSpellId: string|null }|null} sessionContext
  * @returns {Promise<Array<{tool:string, params:Object, result:any}>>}
  */
 export async function executeDMTools(toolCalls, sessionContext = null) {
   const results = [];
 
   // Seed from cross-iteration context (may be null on first iteration)
-  let lastCreatedItemId  = sessionContext?.lastCreatedItemId  ?? null;
+  let lastCreatedItemId   = sessionContext?.lastCreatedItemId   ?? null;
   let lastIntroducedNpcId = sessionContext?.lastIntroducedNpcId ?? null;
+  let lastCreatedSpellId  = sessionContext?.lastCreatedSpellId  ?? null;
 
   for (const call of toolCalls) {
     // ── Resolve add_item / remove_item → create_item dependency ──
@@ -673,6 +845,14 @@ export async function executeDMTools(toolCalls, sessionContext = null) {
       if (!db.getItem(call.itemId)) {
         console.warn(`[dm-tools] ${call.tool}: itemId "${call.itemId}" not in cache — substituting last created item "${lastCreatedItemId}"`);
         call.itemId = lastCreatedItemId;
+      }
+    }
+
+    // ── Resolve give_spell → create_spell dependency ─────────────
+    if (call.tool === 'give_spell' && call.spellId && lastCreatedSpellId) {
+      if (!db.getSpell(call.spellId)) {
+        console.warn(`[dm-tools] give_spell: spellId "${call.spellId}" not in cache — substituting last created spell "${lastCreatedSpellId}"`);
+        call.spellId = lastCreatedSpellId;
       }
     }
 
@@ -700,6 +880,10 @@ export async function executeDMTools(toolCalls, sessionContext = null) {
       if (call.tool === 'introduce_npc' && result.npcId && !result.error) {
         lastIntroducedNpcId = result.npcId;
         if (sessionContext) sessionContext.lastIntroducedNpcId = result.npcId;
+      }
+      if (call.tool === 'create_spell' && result.spellId && !result.error) {
+        lastCreatedSpellId = result.spellId;
+        if (sessionContext) sessionContext.lastCreatedSpellId = result.spellId;
       }
 
       results.push({ tool: call.tool, params: call, result });
@@ -768,6 +952,18 @@ export function toolResultSummary(tool, params, result) {
     }
     case 'advance_scene':
       return `🗺️ Scene advances: ${params.newSceneTitle || 'New Scene'}`;
+    case 'create_spell':
+      return `✨ New spell created: ${result.spell?.name || params.name} (Level ${result.spell?.level ?? 0})`;
+    case 'give_spell':
+      return `📖 ${result.charName} learns: ${result.spellName}`;
+    case 'remove_spell':
+      return `📖 Spell forgotten: ${result.spellName}`;
+    case 'use_spell_slot':
+      return `✨ ${result.charName} casts${result.spellName ? ` ${result.spellName}` : ''} (L${result.slotLevel} slot — ${result.remaining} left)`;
+    case 'restore_spell_slots':
+      return `🌙 ${result.charName} recovers spell slots`;
+    case 'get_spell_slots':
+      return ''; // read-only, no badge
     case 'create_item':
       return `🌟 New item created: ${result.item?.name || params.name}`;
     case 'log_event':

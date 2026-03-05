@@ -8,7 +8,7 @@
  */
 
 import {
-  getStory, saveStory, getCharacter, getAllItems, getItem,
+  getStory, saveStory, getCharacter, getAllItems, getItem, getNPCsForStory,
 } from './db.js';
 import { geminiChat, geminiGenerate, toGeminiHistory } from './api-gemini.js';
 import { generateImage } from './api-image.js';
@@ -26,6 +26,19 @@ import { executeDMTools, toolResultSummary } from './dm-tools.js';
 export function buildDMSystemPrompt(story, characters) {
   const currentScene = story.scenes[story.currentSceneIndex] || story.scenes[story.scenes.length - 1];
   const completedCount = story.scenes.filter(s => s.completedAt).length;
+
+  // Known NPCs section
+  const knownNPCs = getNPCsForStory(story.id);
+  const npcSection = knownNPCs.length > 0
+    ? `\n\n== KNOWN WORLD CHARACTERS (use their IDs in npc_speak) ==\n` +
+      knownNPCs.map(npc => {
+        const condStr = npc.conditions?.length ? ` | Conditions: ${npc.conditions.join(', ')}` : '';
+        return `- ${npc.name} | ID: ${npc.id} | Role: ${npc.npcRole || npc.class} | Race: ${npc.race} | HP: ${npc.stats.hp}/${npc.stats.maxHp}${condStr}
+  Personality: ${npc.personality || 'Unknown'}
+  Appearance: ${npc.appearance || 'Unknown'}
+  Backstory: ${npc.backstory ? npc.backstory.slice(0, 150) : 'Unknown'}`;
+      }).join('\n')
+    : '';
 
   // Character sheets section
   const charSheets = characters.map(ch => {
@@ -82,7 +95,17 @@ WRITE TOOLS (narrate all outcomes dramatically):
 - remove_condition: {"tool":"remove_condition","characterId":"<id>","condition":"Poisoned"}
 - log_event: {"tool":"log_event","characterId":"<id>","entry":"Brief summary of what happened"}
 - advance_scene: {"tool":"advance_scene","storyId":"${story.id}","newSceneTitle":"<title>","newSceneDescription":"<vivid description>"}
-- create_item: {"tool":"create_item","name":"<name>","type":"weapon|armor|potion|misc|quest","description":"<desc>","rarity":"common|uncommon|rare|legendary","stats":{}}`.trim();
+- create_item: {"tool":"create_item","name":"<name>","type":"weapon|armor|potion|misc|quest","description":"<desc>","rarity":"common|uncommon|rare|legendary","stats":{}}
+
+NPC / WORLD CHARACTER TOOLS:
+- introduce_npc: Create a new world character (NPC, enemy, merchant, creature, etc.) who will be remembered across sessions.
+  {"tool":"introduce_npc","storyId":"${story.id}","name":"<name>","role":"enemy|merchant|ally|neutral|boss|creature","race":"<race>","personality":"<1-2 sentences>","appearance":"<1-2 sentences describing looks>","hp":<number>,"ac":<number>}
+  Use this the FIRST TIME an NPC appears. A portrait and backstory will be generated automatically.
+
+- npc_speak: Make a world character say something out loud. This renders as their own speech bubble in the chat.
+  By npcId (for previously introduced NPCs): {"tool":"npc_speak","npcId":"<id>","speech":"What they say..."}
+  By name (for NPCs introduced in the same response): {"tool":"npc_speak","npcName":"<name>","speech":"What they say..."}
+  IMPORTANT: Use npc_speak for ALL NPC dialogue — never just write their words in the narration.`.trim();
 
   return `You are a seasoned, immersive Dungeon Master running a DND 5e campaign. You are the voice of the world — its narrator, its NPCs, its fate. You never break character.
 
@@ -95,11 +118,11 @@ Status: ${completedCount} of ${story.scenes.length} scenes completed
 == CURRENT SCENE ==
 ${currentScene ? `Title: ${currentScene.title}\n${currentScene.description}` : 'The adventure is just beginning.'}
 
-== CHARACTERS (your players) ==
+== PLAYER CHARACTERS ==
 ${charSheets || 'No characters assigned yet.'}
 
 == CHARACTER REFERENCE (use these IDs in tool calls) ==
-${charRef || 'No characters yet.'}
+${charRef || 'No characters yet.'}${npcSection}
 
 ${toolDocs}
 
@@ -109,12 +132,13 @@ ${toolDocs}
 3. React meaningfully to every player action. Choices have consequences.
 4. When dice rolls are needed, describe them narratively ("roll for stealth" → "The shadows seem to part for you as you slip past the guard...").
 5. Build tension slowly. Not every action needs combat.
-6. Create memorable, distinct NPCs with personality and motivation.
-7. When a character takes damage or heals, ALWAYS use the modify_hp tool.
+6. Every NPC, enemy, merchant, creature — anyone the party interacts with — is a WORLD CHARACTER with their own life. Use introduce_npc the first time they appear; use npc_speak for ALL their dialogue. Known characters are listed under KNOWN WORLD CHARACTERS.
+7. When a character takes damage or heals, ALWAYS use the modify_hp tool (works for NPCs too).
 8. When a scene naturally concludes and a new environment begins, use advance_scene.
 9. Keep responses to 2-4 paragraphs unless the scene demands more.
 10. End each response with a clear prompt for what the players can do next.
 11. Use tool calls BEFORE narrating their outcome — the system will execute them.
+12. Give each NPC a distinct voice that matches their personality. An old wizard speaks differently from a gruff dwarf mercenary.
 
 == TONE ==
 Dark fantasy with moments of wonder. Build dread before combat. Celebrate victories. Make death feel real and weighty. Reference character backstories when appropriate.`;
@@ -169,6 +193,7 @@ export function stripToolCalls(responseText) {
  *   toolCalls: Object[],
  *   toolCallsExecuted: Array<{tool:string, params:Object, result:any}>,
  *   toolSummaries: string[],
+ *   npcSpeeches: Array<{npcId:string, npcName:string, npcRole:string, portrait:string, speech:string}>,
  *   sceneAdvanced: boolean,
  *   newSceneImagePrompt: string|null,
  * }>}
@@ -215,18 +240,23 @@ export async function sendDMMessage(storyId, userMessage) {
     ? await executeDMTools(toolCalls)
     : [];
 
-  // 8. Build human-readable tool summaries
-  const toolSummaries = toolCallsExecuted.map(({ tool, params, result }) =>
-    toolResultSummary(tool, params, result)
-  );
+  // 8. Build human-readable tool summaries (empty strings from npc_speak are filtered out)
+  const toolSummaries = toolCallsExecuted
+    .map(({ tool, params, result }) => toolResultSummary(tool, params, result))
+    .filter(s => s.length > 0);
 
-  // 9. Check if a scene was advanced (needs new image)
+  // 9. Collect NPC speeches (npc_speak results) in order
+  const npcSpeeches = toolCallsExecuted
+    .filter(r => r.tool === 'npc_speak' && !r.result?.error)
+    .map(r => r.result);
+
+  // 10. Check if a scene was advanced (needs new image)
   const sceneAdvance = toolCallsExecuted.find(r => r.tool === 'advance_scene' && r.result?.newSceneId);
   const sceneAdvanced = Boolean(sceneAdvance);
   const newSceneImagePrompt = sceneAdvance?.result?.imagePrompt || null;
   const newSceneId = sceneAdvance?.result?.newSceneId || null;
 
-  // 10. Append DM response to history
+  // 11. Append DM response + NPC speeches to chat history
   const dmMsg = {
     role: 'assistant',
     content: cleanResponse,
@@ -237,9 +267,23 @@ export async function sendDMMessage(storyId, userMessage) {
   // Reload story (tools may have mutated it)
   const updatedStory = getStory(storyId) || story;
   updatedStory.dmChatHistory.push(dmMsg);
+
+  // Store each NPC speech as its own history entry (role: 'npc')
+  // These are skipped when building Gemini history but displayed in the UI
+  for (const speech of npcSpeeches) {
+    updatedStory.dmChatHistory.push({
+      role: 'npc',
+      npcId: speech.npcId,
+      npcName: speech.npcName,
+      portrait: speech.portrait,
+      content: speech.speech,
+      timestamp: Date.now(),
+    });
+  }
+
   saveStory(updatedStory);
 
-  // 11. Async: generate new scene image if scene advanced
+  // 12. Async: generate new scene image if scene advanced
   if (sceneAdvanced && newSceneImagePrompt && newSceneId) {
     generateSceneImageAsync(storyId, newSceneId, newSceneImagePrompt);
   }
@@ -250,6 +294,7 @@ export async function sendDMMessage(storyId, userMessage) {
     toolCalls,
     toolCallsExecuted,
     toolSummaries,
+    npcSpeeches,
     sceneAdvanced,
     newSceneImagePrompt,
   };

@@ -177,7 +177,7 @@ export async function testGeminiKey() {
  */
 export function toGeminiHistory(messages) {
   return messages
-    .filter(m => m.role !== 'system')
+    .filter(m => m.role !== 'system' && m.role !== 'npc')
     .map(m => ({
       role: m.role === 'assistant' ? 'model' : 'user',
       parts: [{ text: m.content }],

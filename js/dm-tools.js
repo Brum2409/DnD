@@ -462,16 +462,24 @@ export const DM_TOOLS = {
     const story = db.getStory(params.storyId);
     if (!story) return { error: 'Story not found' };
 
-    const compressible = story.dmChatHistory.filter(
+    // Separate out all conversational messages (skip npc/compression/summary entries)
+    const conversational = story.dmChatHistory.filter(
       m => (m.role === 'user' || m.role === 'assistant') && !m.isCompressionSummary
     );
 
-    if (compressible.length < 8) {
-      return { error: 'History is too short to compress (need at least 8 messages). Continue playing.' };
+    // Always keep the most recent messages uncompressed so the DM has
+    // live context for the current scene. Only older messages are summarised.
+    const KEEP_RECENT = 8;
+
+    if (conversational.length <= KEEP_RECENT) {
+      return { error: `History is too short to compress (need more than ${KEEP_RECENT} messages). Continue playing.` };
     }
 
-    // Build plain-text transcript for the AI summariser
-    const transcript = compressible
+    const toCompress = conversational.slice(0, -KEEP_RECENT);
+    const toKeep     = conversational.slice(-KEEP_RECENT);
+
+    // Build plain-text transcript of only the messages being compressed
+    const transcript = toCompress
       .map(m => `${m.role === 'user' ? 'PLAYER' : 'DM'}: ${m.content.slice(0, 600)}`)
       .join('\n\n');
 
@@ -495,35 +503,41 @@ ${transcript.slice(0, 10000)}`,
       0.5
     ).catch(() => 'Adventure history compressed. The party has been adventuring.');
 
-    // Archive the full history (append to existing archive if already compressed before)
+    // Archive the full history (append to any existing archive from prior compressions)
     if (!story.dmChatHistoryFull) story.dmChatHistoryFull = [];
     story.dmChatHistoryFull.push(...story.dmChatHistory);
 
-    const messageCount = story.dmChatHistory.length;
+    const compressedCount = toCompress.length;
 
-    // Replace live history with a compression marker (UI-only) + the summary as context
+    // Rebuild live history:
+    //   1. compression marker  (UI divider, invisible to Gemini)
+    //   2. summary user msg    (read by Gemini as condensed prior-session context)
+    //   3. the recent messages that were NOT compressed (kept verbatim)
     story.dmChatHistory = [
       {
-        role:                  'compression',
-        content:               'Session history compressed',
+        role:             'compression',
+        content:          'Session history compressed',
         summary,
-        compressedCount:       messageCount,
-        compressedAt:          Date.now(),
-        compressionIndex:      (story.dmChatHistoryFull.length - messageCount),
+        compressedCount,
+        keptCount:        toKeep.length,
+        compressedAt:     Date.now(),
+        compressionIndex: story.dmChatHistoryFull.length - story.dmChatHistory.length,
       },
       {
-        role:                  'user',
-        content:               `[ADVENTURE SUMMARY — ${messageCount} previous messages compressed into this note]\n\n${summary}`,
-        isCompressionSummary:  true,
-        timestamp:             Date.now(),
+        role:                 'user',
+        content:              `[ADVENTURE SUMMARY — ${compressedCount} older messages compressed; the ${toKeep.length} most recent messages follow in full]\n\n${summary}`,
+        isCompressionSummary: true,
+        timestamp:            Date.now(),
       },
+      ...toKeep,
     ];
 
     db.saveStory(story);
 
     return {
-      success:       true,
-      compressedCount: messageCount,
+      success:        true,
+      compressedCount,
+      keptCount:      toKeep.length,
       summary,
     };
   },
@@ -603,7 +617,7 @@ export function formatToolResultsForRePrompt(toolResults) {
       case 'log_event':
         return `✅ log_event: Adventure log updated`;
       case 'compress_history':
-        return `✅ compress_history: ${result.compressedCount} messages compressed into adventure summary. The DM will now work from this summary.`;
+        return `✅ compress_history: ${result.compressedCount} older messages compressed into adventure summary; the ${result.keptCount} most recent messages are kept verbatim. Continue from this fresh context.`;
       default:
         return `✅ ${tool}: ${JSON.stringify(result).slice(0, 120)}`;
     }
@@ -702,7 +716,7 @@ export function toolResultSummary(tool, params, result) {
     case 'npc_speak':
       return ''; // NPC speech renders as its own bubble
     case 'compress_history':
-      return `📜 History compressed (${result.compressedCount} messages summarised)`;
+      return `📜 History compressed (${result.compressedCount} messages → summary, ${result.keptCount} recent kept)`;
     // Read tools produce no visible badge — they're internal DM actions
     case 'get_character_stats':
     case 'get_full_character':

@@ -45,6 +45,7 @@
  * @property {string} [personality]   - short personality description
  * @property {string} [appearance]    - physical description
  * @property {string[]} [metInStoryIds] - story IDs where this NPC has appeared
+ * @property {string} [lastSceneId]   - ID of the scene where this NPC was last present
  *
  * @typedef {Object} ItemStats
  * @property {string} [damage]       - e.g. "1d6+2"

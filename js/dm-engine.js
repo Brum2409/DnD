@@ -43,15 +43,28 @@ export function buildDMSystemPrompt(story, characters) {
     return `• ${ch.name} | ID: ${ch.id} | ${ch.race} ${ch.class} Lv${ch.level} | HP: ${ch.stats.hp}/${ch.stats.maxHp} | AC: ${ch.stats.ac} | Gold: ${ch.gold}gp | XP: ${ch.xp} | Prof: +${profBonus}${condStr}`;
   }).join('\n');
 
-  // ── Compact NPC quick-reference ────────────────────────────
+  // ── Compact NPC quick-reference — split by location ────────
   // Full NPC sheets available via get_npc_details.
   const knownNPCs = getNPCsForStory(story.id);
+  const sceneNpcIds = new Set(currentScene?.npcs || []);
+  const sceneNPCs   = knownNPCs.filter(npc => sceneNpcIds.has(npc.id));
+  const absentNPCs  = knownNPCs.filter(npc => !sceneNpcIds.has(npc.id));
+
   const npcQuickRef = knownNPCs.length > 0
-    ? `\n\n== KNOWN WORLD CHARACTERS (quick ref — use get_npc_details for full info) ==\n` +
-      knownNPCs.map(npc => {
-        const condStr = npc.conditions?.length ? ` | Cond: ${npc.conditions.join(', ')}` : '';
-        return `• ${npc.name} | ID: ${npc.id} | ${npc.npcRole || npc.class} | ${npc.race} | HP: ${npc.stats.hp}/${npc.stats.maxHp}${condStr}`;
-      }).join('\n')
+    ? (sceneNPCs.length > 0
+        ? `\n\n== CHARACTERS IN CURRENT SCENE (quick ref — use get_npc_details for full info) ==\n` +
+          sceneNPCs.map(npc => {
+            const condStr = npc.conditions?.length ? ` | Cond: ${npc.conditions.join(', ')}` : '';
+            return `• ${npc.name} | ID: ${npc.id} | ${npc.npcRole || npc.class} | ${npc.race} | HP: ${npc.stats.hp}/${npc.stats.maxHp}${condStr}`;
+          }).join('\n')
+        : '')
+      + (absentNPCs.length > 0
+        ? `\n\n== KNOWN CHARACTERS (not in current scene — last seen elsewhere) ==\n` +
+          absentNPCs.map(npc => {
+            const lastScene = story.scenes.find(s => s.id === npc.lastSceneId);
+            return `• ${npc.name} | ID: ${npc.id} | ${npc.npcRole || npc.class} | Last seen: ${lastScene?.title || 'unknown'}`;
+          }).join('\n')
+        : '')
     : '';
 
   // ── Tool documentation ─────────────────────────────────────

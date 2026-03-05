@@ -623,9 +623,15 @@
       <div id="char-cards">
         <!-- Injected by JS -->
       </div>
-      <div class="char-panel-header" id="npc-panel-header" style="display:none;border-top:1px solid var(--color-border);margin-top:0.25rem;">World Characters</div>
+      <div class="char-panel-header" id="npc-panel-header" style="display:none;border-top:1px solid var(--color-border);margin-top:0.25rem;">In Scene</div>
       <div id="npc-cards">
-        <!-- NPC cards injected by JS -->
+        <!-- Scene NPC cards injected by JS -->
+      </div>
+      <div class="char-panel-header" id="known-chars-panel-header" style="display:none;border-top:1px solid var(--color-border);margin-top:0.25rem;cursor:pointer;" onclick="toggleKnownChars()">
+        Known Characters <span id="known-chars-toggle">▶</span>
+      </div>
+      <div id="known-chars-cards" style="display:none;">
+        <!-- All story NPCs not in current scene -->
       </div>
     </aside>
 
@@ -823,56 +829,119 @@ function renderCharPanel() {
   renderNPCPanel();
 }
 
+function buildNpcCardHtml(npc) {
+  const hpPct = Math.max(0, Math.min(100, (npc.stats.hp / npc.stats.maxHp) * 100));
+  const hpColor = hpPct > 60 ? 'var(--color-success)' : hpPct > 25 ? 'var(--color-primary)' : 'var(--color-danger)';
+  const conditionHtml = (npc.conditions || []).map(c =>
+    `<span class="condition-chip">${escHtml(c)}</span>`
+  ).join('');
+  const roleLabel = npc.npcRole || npc.class || 'NPC';
+  return `
+    <div class="char-mini-card npc-card" data-char-id="${npc.id}" title="${escHtml(npc.personality || 'Click for details')}">
+      <div class="char-mini-top">
+        <div class="char-mini-portrait" style="border:1px solid rgba(120,80,180,0.4);">
+          ${npc.portrait ? `<img src="${npc.portrait}" alt="" />` : '🎭'}
+        </div>
+        <div class="char-mini-info">
+          <div class="char-mini-name">${escHtml(npc.name)}</div>
+          <div class="char-mini-sub" style="color:var(--color-accent,#a07ad0);">${escHtml(roleLabel)}</div>
+        </div>
+      </div>
+      <div class="hp-bar-wrap">
+        <div class="hp-bar-label">
+          <span>HP</span>
+          <span>${npc.stats.hp} / ${npc.stats.maxHp}</span>
+        </div>
+        <div class="hp-bar">
+          <div class="hp-bar-fill" style="width:${hpPct}%;background:${hpColor};"></div>
+        </div>
+      </div>
+      ${conditionHtml ? `<div class="condition-chips">${conditionHtml}</div>` : ''}
+    </div>
+  `;
+}
+
 function renderNPCPanel() {
   if (!activeStory) return;
-  const npcs = getNPCsForStory(activeStory.id);
 
-  let npcContainer = document.getElementById('npc-cards');
+  // Only show NPCs that are in the current scene
+  const currentScene = activeStory.scenes[activeStory.currentSceneIndex];
+  const sceneNpcIds = (currentScene?.npcs) || [];
+  const sceneNpcs = sceneNpcIds.map(id => getCharacter(id)).filter(Boolean);
+
+  const npcContainer = document.getElementById('npc-cards');
   if (!npcContainer) return;
 
-  if (!npcs.length) {
+  if (!sceneNpcs.length) {
     npcContainer.innerHTML = '';
     document.getElementById('npc-panel-header').style.display = 'none';
+  } else {
+    document.getElementById('npc-panel-header').style.display = '';
+    npcContainer.innerHTML = sceneNpcs.map(buildNpcCardHtml).join('');
+    npcContainer.querySelectorAll('.npc-card').forEach(card => {
+      card.addEventListener('click', () => openSlideover(card.dataset.charId));
+    });
+  }
+
+  renderKnownCharsPanel(sceneNpcIds);
+}
+
+function renderKnownCharsPanel(sceneNpcIds) {
+  if (!activeStory) return;
+  const allNpcs = getNPCsForStory(activeStory.id);
+  // Known characters: story NPCs not currently in the scene
+  const knownNpcs = allNpcs.filter(npc => !sceneNpcIds.includes(npc.id));
+
+  const headerEl = document.getElementById('known-chars-panel-header');
+  const container = document.getElementById('known-chars-cards');
+  if (!headerEl || !container) return;
+
+  if (!knownNpcs.length) {
+    headerEl.style.display = 'none';
+    container.style.display = 'none';
     return;
   }
 
-  document.getElementById('npc-panel-header').style.display = '';
-  npcContainer.innerHTML = npcs.map(npc => {
-    const hpPct = Math.max(0, Math.min(100, (npc.stats.hp / npc.stats.maxHp) * 100));
-    const hpColor = hpPct > 60 ? 'var(--color-success)' : hpPct > 25 ? 'var(--color-primary)' : 'var(--color-danger)';
-    const conditionHtml = (npc.conditions || []).map(c =>
-      `<span class="condition-chip">${escHtml(c)}</span>`
-    ).join('');
-    const roleLabel = npc.npcRole || npc.class || 'NPC';
-
-    return `
-      <div class="char-mini-card npc-card" data-char-id="${npc.id}" title="${escHtml(npc.personality || 'Click for details')}">
-        <div class="char-mini-top">
-          <div class="char-mini-portrait" style="border:1px solid rgba(120,80,180,0.4);">
-            ${npc.portrait ? `<img src="${npc.portrait}" alt="" />` : '🎭'}
+  headerEl.style.display = '';
+  // Only re-render content if expanded
+  if (container.style.display !== 'none') {
+    container.innerHTML = knownNpcs.map(npc => {
+      const roleLabel = npc.npcRole || npc.class || 'NPC';
+      return `
+        <div class="char-mini-card npc-card" data-char-id="${npc.id}" title="${escHtml(npc.personality || 'Click for details')}" style="opacity:0.7;">
+          <div class="char-mini-top">
+            <div class="char-mini-portrait" style="border:1px solid rgba(120,80,180,0.2);">
+              ${npc.portrait ? `<img src="${npc.portrait}" alt="" />` : '🎭'}
+            </div>
+            <div class="char-mini-info">
+              <div class="char-mini-name">${escHtml(npc.name)}</div>
+              <div class="char-mini-sub" style="color:var(--color-accent,#a07ad0);">${escHtml(roleLabel)}</div>
+            </div>
           </div>
-          <div class="char-mini-info">
-            <div class="char-mini-name">${escHtml(npc.name)}</div>
-            <div class="char-mini-sub" style="color:var(--color-accent,#a07ad0);">${escHtml(roleLabel)}</div>
-          </div>
-        </div>
-        <div class="hp-bar-wrap">
-          <div class="hp-bar-label">
-            <span>HP</span>
-            <span>${npc.stats.hp} / ${npc.stats.maxHp}</span>
-          </div>
-          <div class="hp-bar">
-            <div class="hp-bar-fill" style="width:${hpPct}%;background:${hpColor};"></div>
+          <div style="font-family:var(--font-ui);font-size:0.62rem;color:var(--color-text-faint);padding:0.15rem 0.5rem 0.4rem;">
+            Last seen: ${escHtml(npc.lastSceneId ? (activeStory.scenes.find(s => s.id === npc.lastSceneId)?.title || 'unknown scene') : 'unknown')}
           </div>
         </div>
-        ${conditionHtml ? `<div class="condition-chips">${conditionHtml}</div>` : ''}
-      </div>
-    `;
-  }).join('');
+      `;
+    }).join('');
+    container.querySelectorAll('.npc-card').forEach(card => {
+      card.addEventListener('click', () => openSlideover(card.dataset.charId));
+    });
+  }
+}
 
-  npcContainer.querySelectorAll('.npc-card').forEach(card => {
-    card.addEventListener('click', () => openSlideover(card.dataset.charId));
-  });
+function toggleKnownChars() {
+  const container = document.getElementById('known-chars-cards');
+  const toggle = document.getElementById('known-chars-toggle');
+  if (!container || !toggle) return;
+  const isOpen = container.style.display !== 'none';
+  container.style.display = isOpen ? 'none' : '';
+  toggle.textContent = isOpen ? '▶' : '▼';
+  if (!isOpen) {
+    // Render content when expanding
+    const sceneNpcIds = (activeStory?.scenes[activeStory?.currentSceneIndex]?.npcs) || [];
+    renderKnownCharsPanel(sceneNpcIds);
+  }
 }
 
 // ── Chat history rendering ────────────────────────────────────
@@ -1116,10 +1185,15 @@ async function handleSend(overrideMessage) {
       showToast('Scene advances!', 'info');
     }
 
-    // Check for character deaths
-    const deathSummary = result.toolSummaries.find(s => s.includes('fallen') || s.includes('💀'));
-    if (deathSummary) {
-      showDeathOverlay(deathSummary);
+    // Check for hero deaths only (not NPC/enemy deaths)
+    const heroDeathResult = result.toolCallsExecuted.find(r => {
+      if (r.tool !== 'modify_hp' || !r.result?.isDead) return false;
+      const char = getCharacter(r.params.characterId);
+      return char && !char.isNPC;
+    });
+    if (heroDeathResult) {
+      const deadHero = getCharacter(heroDeathResult.params.characterId);
+      showDeathOverlay(`💀 ${deadHero?.name || 'A hero'} has fallen to 0 HP!`);
     }
 
   } catch (err) {

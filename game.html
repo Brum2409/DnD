@@ -1126,6 +1126,7 @@ function appendToolBadge(summary) {
   else if (summary.includes('❤️') || summary.includes('heal')) el.classList.add('tool-heal');
   else if (summary.includes('🎒') || summary.includes('item')) el.classList.add('tool-item');
   else if (summary.includes('🗺️') || summary.includes('Scene')) el.classList.add('tool-scene');
+  else if (summary.includes('🖼️') || summary.includes('image refresh')) el.classList.add('tool-scene');
 
   el.textContent = summary;
   container.appendChild(el);
@@ -1285,11 +1286,11 @@ async function handleSend(overrideMessage) {
     renderCharPanel();
     renderNPCPanel();
 
-    // If scene advanced, update scene display
-    if (result.sceneAdvanced) {
+    // If scene advanced or scene image refreshed, update scene display
+    if (result.sceneAdvanced || result.sceneImageRefreshed) {
       activeStory = getStory(activeStory.id) || activeStory;
       renderScene();
-      showToast('Scene advances!', 'info');
+      if (result.sceneAdvanced) showToast('Scene advances!', 'info');
     }
 
     // Check for hero deaths only (not NPC/enemy deaths)

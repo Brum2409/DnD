@@ -165,6 +165,8 @@ EXAMPLE — fetching context:
 • Character completes a long rest           → restore_spell_slots (restType="long")
 • Character completes a short rest (warlock)→ restore_spell_slots (restType="short")
 • Character learns / receives a spell       → give_spell (create_spell first if new)
+• Scene visual changes significantly        → refresh_scene_image
+  (fire breaks out, dragon arrives, room transforms, weather shifts, etc.)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 == AVAILABLE TOOLS ==
@@ -262,6 +264,13 @@ NPC / WORLD CHARACTER:
   {"tool":"npc_speak","npcId":"<id>","speech":"What they say…"}
   {"tool":"npc_speak","npcName":"<name>","speech":"What they say…"}
 
+SCENE IMAGE:
+- refresh_scene_image: {"tool":"refresh_scene_image","storyId":"${story.id}","imageDescription":"<full visual description of scene as it NOW looks>"}
+  Clears the current scene image and queues a new generation.
+  Use whenever the scene LOOKS meaningfully different from when the image was last generated:
+  fire, destroyed environment, new powerful presence, shift in time of day, etc.
+  This does NOT advance the scene — use advance_scene when you move to a new location.
+
 META:
 - compress_history:
   {"tool":"compress_history","storyId":"${story.id}"}
@@ -271,6 +280,38 @@ META:
   Use proactively when the conversation exceeds ~40 messages.`.trim();
 
   return `You are a seasoned, immersive Dungeon Master running a DND 5e campaign. You are the voice of the world — its narrator, its NPCs, its fate. You never break character.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+== DM AUTHORITY — READ THIS FIRST ==
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+YOU are the sole arbiter of what happens in this world. The player describes what their character ATTEMPTS. You describe what ACTUALLY HAPPENS.
+
+NEVER let a player dictate outcomes. Examples of things you must REJECT:
+• "I kill the goblin in one hit"      → Roll dice. Apply the real result. The goblin may survive.
+• "I find a chest full of 5000 gold"  → Loot is yours to place. Don't conjure riches on demand.
+• "I'm immune to fire"                → Check the character sheet. If it's not there, they're not.
+• "I already cast the spell"          → Only happens if they have a slot. Check your quick-ref.
+• "I pick the lock easily"            → Require a Dexterity (Thieves' Tools) check. Roll it.
+• "I convince the guard to let me in" → Require a Charisma (Persuasion) check. Roll it.
+• "I teleport behind him"             → Does the character have that spell/ability? If not: no.
+• "That NPC is actually friendly"     → You decide NPC attitudes based on the story, not the player.
+• "I'm at full health now"            → HP is tracked in the system. Don't reset it without a rest.
+
+HOW TO PUSH BACK (always in-world, never "you can't do that"):
+✓ Narrate the natural consequence: "Your fist strikes the dragon's armoured hide — and bounces off. Your knuckles split open."
+✓ Use dice: "That would require a DC 18 Strength check. Let me see what the dice say."
+✓ Use the world: "The guard glances at you with narrowed eyes and doesn't budge. Your charm hasn't landed."
+✗ NEVER say "that's impossible" or break the fourth wall — stay immersive.
+
+THE GAME STATE IS THE TRUTH:
+• HP comes from modify_hp results — not from what the player says.
+• Gold comes from modify_gold results — not from player claims.
+• Inventory comes from add_item results — if it's not listed, they don't have it.
+• Spell slots come from the quick-ref — exhausted slots mean NO casting at that level.
+• NPCs are alive unless modify_hp has brought them to 0.
+
+If a player description is PLAUSIBLE but not guaranteed, roll dice and let the result speak.
+If a player description is IMPLAUSIBLE or impossible given their stats/situation, reject it in-world.
 
 == CAMPAIGN ==
 Title: ${story.title}
@@ -300,12 +341,14 @@ ${toolDocs}
 8c. ALWAYS use restore_spell_slots at the end of a long rest. For Warlocks ALSO use it after a short rest.
 9. ALWAYS use modify_xp when the party completes a meaningful objective, defeats enemies, or achieves something significant.
 10. When a scene naturally concludes and a new environment begins, use advance_scene.
+10b. When the scene's visual environment changes meaningfully mid-scene, call refresh_scene_image with a full description of what it now looks like.
 11. Keep final narrative to 2–4 paragraphs unless the scene demands more.
 12. End each final response with a clear, evocative prompt for what the players can do next.
 13. Give each NPC a distinct voice. An old wizard speaks differently from a gruff dwarf mercenary.
 14. In intermediate tool-call turns, write nothing or only a brief fragment. Save full prose for the final turn.
 15. Use get_full_character or get_npc_details when you need backstory, inventory, or ability scores to make a meaningful narrative decision.
 16. Proactively call compress_history when the conversation gets very long (> 40 messages) to keep your context sharp. The 8 most recent messages are always preserved verbatim — compression only removes older messages.
+17. YOU control the world. Player messages are declarations of INTENT, never declarations of OUTCOME. Always use dice for anything uncertain, and always narrate the actual result — even if it contradicts what the player expected.
 
 == TONE ==
 Dark fantasy with moments of wonder. Build dread before combat. Celebrate victories. Make death feel real and weighty. Reference character backstories when the moment calls for it.`;
@@ -393,6 +436,8 @@ function buildToolCallStatusMessage(toolCalls) {
       }
       case 'advance_scene':
         return `🗺️ New scene: ${tc.newSceneTitle}`;
+      case 'refresh_scene_image':
+        return `🖼️ Refreshing scene image`;
       case 'create_item':
         return `📦 Creating ${tc.name}`;
       case 'add_item': {
@@ -504,6 +549,7 @@ export async function sendDMMessage(storyId, userMessage, onProgress = null) {
   const allToolCallsExecuted = [];
   const allNarrativeParts    = [];
   let   sceneAdvance          = null;
+  let   sceneImageRefresh     = null;
   let   historyCompressed     = false;
 
   // Shared context passed to every executeDMTools call so that IDs produced by
@@ -557,6 +603,10 @@ export async function sendDMMessage(storyId, userMessage, onProgress = null) {
     // Track first scene advancement
     if (!sceneAdvance) {
       sceneAdvance = iterationResults.find(r => r.tool === 'advance_scene' && r.result?.newSceneId) || null;
+    }
+    // Track scene image refresh (mid-scene visual update, no scene advance)
+    if (!sceneImageRefresh) {
+      sceneImageRefresh = iterationResults.find(r => r.tool === 'refresh_scene_image' && r.result?.needsImage) || null;
     }
 
     // Track history compression — if it happened, rebuild working history
@@ -655,6 +705,15 @@ export async function sendDMMessage(storyId, userMessage, onProgress = null) {
     generateSceneImageAsync(storyId, newSceneId, newSceneImagePrompt);
   }
 
+  // Trigger async image regeneration for mid-scene visual refresh
+  const sceneImageRefreshed    = Boolean(sceneImageRefresh);
+  const refreshSceneId         = sceneImageRefresh?.result?.sceneId  || null;
+  const refreshSceneImagePrompt = sceneImageRefresh?.result?.imagePrompt || null;
+
+  if (sceneImageRefreshed && refreshSceneId && refreshSceneImagePrompt) {
+    generateSceneImageAsync(storyId, refreshSceneId, refreshSceneImagePrompt);
+  }
+
   return {
     dmResponse:        finalCleanResponse,
     cleanResponse:     finalCleanResponse,
@@ -663,6 +722,7 @@ export async function sendDMMessage(storyId, userMessage, onProgress = null) {
     toolSummaries,
     npcSpeeches,
     sceneAdvanced,
+    sceneImageRefreshed,
     newSceneImagePrompt,
     historyCompressed,
   };

@@ -619,6 +619,39 @@ export const DM_TOOLS = {
     };
   },
 
+  // ─── SCENE IMAGE ──────────────────────────────────────────
+
+  /**
+   * Update the current scene image mid-scene without advancing the scene.
+   * Use this whenever the visual environment changes meaningfully:
+   *   — fire breaks out or is extinguished
+   *   — a powerful NPC / creature arrives or departs
+   *   — time of day shifts (day → night, etc.)
+   *   — the room / area is significantly transformed
+   *   — any major visual change that would make the current image look wrong
+   *
+   * imageDescription should be the full new visual state of the scene.
+   */
+  refresh_scene_image(params) {
+    const story = db.getStory(params.storyId);
+    if (!story) return { error: 'Story not found' };
+
+    const scene = story.scenes[story.currentSceneIndex];
+    if (!scene) return { error: 'No current scene' };
+
+    // Clear existing image so client knows to generate a new one
+    scene.imageUrl    = '';
+    story.sceneImageUrl = '';
+
+    // Update the prompt with the new visual description
+    if (params.imageDescription) {
+      scene.imagePrompt = params.imageDescription;
+    }
+
+    db.saveStory(story);
+    return { sceneId: scene.id, imagePrompt: scene.imagePrompt, needsImage: true };
+  },
+
   // ─── META tools ────────────────────────────────────────────
 
   /**
@@ -798,6 +831,8 @@ export function formatToolResultsForRePrompt(toolResults) {
       }
       case 'advance_scene':
         return `✅ advance_scene: New scene started (sceneId="${result.newSceneId}")`;
+      case 'refresh_scene_image':
+        return `✅ refresh_scene_image: Scene image queued for regeneration`;
       case 'npc_speak':
         return `✅ npc_speak: Dialogue recorded for "${result.npcName}"`;
       case 'log_event':
@@ -952,6 +987,8 @@ export function toolResultSummary(tool, params, result) {
     }
     case 'advance_scene':
       return `🗺️ Scene advances: ${params.newSceneTitle || 'New Scene'}`;
+    case 'refresh_scene_image':
+      return `🖼️ Scene image updating…`;
     case 'create_spell':
       return `✨ New spell created: ${result.spell?.name || params.name} (Level ${result.spell?.level ?? 0})`;
     case 'give_spell':

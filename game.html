@@ -973,6 +973,12 @@ function renderChatHistory() {
       });
     } else if (msg.isCompressionSummary) {
       // The summary user message is context for the AI only — skip in UI
+    } else if (msg.role === 'assistant') {
+      // Render stored tool badges before the DM narrative
+      if (msg.toolSummaries && msg.toolSummaries.length > 0) {
+        msg.toolSummaries.forEach(summary => appendToolBadge(summary));
+      }
+      appendMessageEl('assistant', msg.content);
     } else {
       appendMessageEl(msg.role, msg.content);
     }

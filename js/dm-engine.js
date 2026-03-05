@@ -420,12 +420,13 @@ export async function sendDMMessage(storyId, userMessage) {
   const updatedStory = getStory(storyId) || story;
 
   updatedStory.dmChatHistory.push({
-    role:      'assistant',
-    content:   finalCleanResponse,
-    timestamp: Date.now(),
-    toolCalls: allToolCallsExecuted.length > 0
+    role:         'assistant',
+    content:      finalCleanResponse,
+    timestamp:    Date.now(),
+    toolCalls:    allToolCallsExecuted.length > 0
       ? allToolCallsExecuted.map(r => r.params)
       : undefined,
+    toolSummaries: toolSummaries.length > 0 ? toolSummaries : undefined,
   });
 
   // NPC speeches stored as 'npc' entries (skipped by toGeminiHistory, shown in UI)

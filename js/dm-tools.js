@@ -15,6 +15,21 @@ import { geminiGenerate } from './api-gemini.js';
 import { generateIconBase64, generateImage } from './api-image.js';
 import { uuid } from './utils.js';
 
+// ── NPC portrait generator (async, updates NPC after creation) ─
+
+async function generateNPCPortraitAsync(npcId, prompt) {
+  try {
+    const portrait = await generateIconBase64(prompt);
+    const npc = db.getCharacter(npcId);
+    if (npc && portrait) {
+      npc.portrait = portrait;
+      db.saveCharacter(npc);
+    }
+  } catch (err) {
+    console.warn('[dm-tools] NPC portrait generation failed:', err.message);
+  }
+}
+
 // ── Tool definitions ──────────────────────────────────────────
 
 export const DM_TOOLS = {
@@ -163,6 +178,91 @@ export const DM_TOOLS = {
     db.saveItem(item);
     return { itemId: item.id, item };
   },
+
+  // ─── NPC / World Character tools ───────────────────────────
+
+  /**
+   * Introduce a new world character (NPC, enemy, merchant, etc.).
+   * Generates an AI backstory and portrait, then saves as a character.
+   * The character is remembered across sessions via the characters table.
+   */
+  async introduce_npc(params) {
+    const {
+      storyId, name, role = 'neutral', race = 'Human',
+      personality = '', appearance = '',
+      hp = 10, ac = 10,
+    } = params;
+
+    // AI-generated backstory
+    const backstory = await geminiGenerate(
+      `Write a 2-3 sentence backstory for a DND NPC. Name: ${name}. Role: ${role}. Race: ${race}. Personality: ${personality || 'mysterious'}. Appearance: ${appearance || 'unremarkable'}. Be evocative. Return only the backstory text, no labels or formatting.`
+    ).catch(() => `${name} is a ${race} ${role} with a past shrouded in mystery.`);
+
+    const npc = {
+      id: uuid(),
+      name,
+      race,
+      class: role,
+      level: 1,
+      isNPC: true,
+      npcRole: role,
+      personality,
+      appearance,
+      backstory,
+      portrait: '',
+      stats: {
+        hp, maxHp: hp, ac,
+        strength: 10, dexterity: 10, constitution: 10,
+        intelligence: 10, wisdom: 10, charisma: 10,
+      },
+      skills: [],
+      inventory: [],
+      conditions: [],
+      gold: 0,
+      xp: 0,
+      adventureLog: [],
+      metInStoryIds: storyId ? [storyId] : [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    db.saveCharacter(npc);
+
+    if (storyId) {
+      db.addNPCToStory(storyId, npc.id);
+    }
+
+    // Generate portrait in the background — updates the saved NPC when ready
+    const portraitPrompt = `${name}, ${race} ${role}, DND fantasy character portrait, ${appearance || 'dramatic lighting'}, detailed face, dark fantasy art, circular portrait`;
+    generateNPCPortraitAsync(npc.id, portraitPrompt);
+
+    return { npcId: npc.id, npc };
+  },
+
+  /**
+   * Make an NPC say something. The speech is rendered as its own
+   * styled bubble in the chat, separate from the DM narration.
+   * Accepts npcId OR npcName (for NPCs introduced in the same turn).
+   */
+  npc_speak(params) {
+    let npc = null;
+    if (params.npcId) {
+      npc = db.getCharacter(params.npcId);
+    }
+    if (!npc && params.npcName) {
+      npc = db.getNPCByName(params.npcName);
+    }
+    if (!npc) {
+      return { error: 'NPC not found', npcName: params.npcName || params.npcId };
+    }
+    return {
+      npcId: npc.id,
+      npcName: npc.name,
+      npcRole: npc.npcRole || npc.class,
+      portrait: npc.portrait,
+      speech: params.speech,
+    };
+  },
 };
 
 // ── Tool executor ─────────────────────────────────────────────
@@ -234,6 +334,10 @@ export function toolResultSummary(tool, params, result) {
       return `🌟 New item created: ${result.item?.name || params.name}`;
     case 'log_event':
       return `📜 Adventure log updated`;
+    case 'introduce_npc':
+      return `🎭 ${result.npc?.name || params.name} enters the story`;
+    case 'npc_speak':
+      return ''; // NPC speech is rendered as its own bubble — no badge needed
     default:
       return `🔧 Tool executed: ${tool}`;
   }

@@ -40,6 +40,11 @@
  * @property {string[]} adventureLog
  * @property {number} createdAt
  * @property {number} updatedAt
+ * @property {boolean} [isNPC]        - true for world characters (NPCs, enemies, etc.)
+ * @property {string} [npcRole]       - e.g. 'enemy', 'merchant', 'ally', 'neutral', 'boss'
+ * @property {string} [personality]   - short personality description
+ * @property {string} [appearance]    - physical description
+ * @property {string[]} [metInStoryIds] - story IDs where this NPC has appeared
  *
  * @typedef {Object} ItemStats
  * @property {string} [damage]       - e.g. "1d6+2"
@@ -81,6 +86,7 @@
  * @property {string} setting
  * @property {string} premise
  * @property {string[]} characterIds
+ * @property {string[]} [npcIds]      - IDs of world characters (NPCs) encountered in this story
  * @property {Scene[]} scenes
  * @property {number} currentSceneIndex
  * @property {Message[]} dmChatHistory
@@ -315,6 +321,45 @@ export function addToAdventureLog(charId, entry) {
   const timestamp = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   char.adventureLog.push(`[${timestamp}] ${entry}`);
   saveCharacter(char);
+}
+
+// ── NPC / World Characters ────────────────────────────────────
+
+/**
+ * Get all NPC characters encountered in a story.
+ * @param {string} storyId
+ * @returns {Character[]}
+ */
+export function getNPCsForStory(storyId) {
+  const story = getStory(storyId);
+  if (!story || !story.npcIds) return [];
+  return story.npcIds.map(id => getCharacter(id)).filter(Boolean);
+}
+
+/**
+ * Register an NPC as having appeared in a story.
+ * @param {string} storyId
+ * @param {string} npcId
+ */
+export function addNPCToStory(storyId, npcId) {
+  const story = getStory(storyId);
+  if (!story) return;
+  if (!story.npcIds) story.npcIds = [];
+  if (!story.npcIds.includes(npcId)) {
+    story.npcIds.push(npcId);
+    saveStory(story);
+  }
+}
+
+/**
+ * Find a world character by name (case-insensitive). Used when the DM
+ * references an NPC by name instead of ID in the same turn they introduced it.
+ * @param {string} name
+ * @returns {Character|null}
+ */
+export function getNPCByName(name) {
+  const lower = name.toLowerCase();
+  return cache.characters.find(c => c.isNPC && c.name.toLowerCase() === lower) || null;
 }
 
 /**

@@ -5,18 +5,126 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>DND AI — Dungeon Master Powered by Gemini</title>
   <meta name="description" content="An AI-powered DND game website with a Gemini Dungeon Master, character creator, and persistent adventures." />
-
-  <!-- OpenGraph -->
   <meta property="og:title"       content="DND AI — AI Dungeon Master" />
   <meta property="og:description" content="Play DND with an AI Dungeon Master powered by Google Gemini. Create characters, build campaigns, and embark on AI-narrated adventures." />
   <meta property="og:type"        content="website" />
-
-  <!-- Favicon (inline SVG d20) -->
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpolygon points='16,2 30,10 30,22 16,30 2,22 2,10' fill='%230d0d0f' stroke='%23c9a84c' stroke-width='2'/%3E%3Ctext x='16' y='21' text-anchor='middle' font-size='14' fill='%23c9a84c' font-family='serif'%3E20%3C/text%3E%3C/svg%3E" />
-
   <link rel="stylesheet" href="css/base.css" />
   <link rel="stylesheet" href="css/components.css" />
   <link rel="stylesheet" href="css/layout.css" />
+
+  <style>
+    /* ── Dashboard-specific styles ── */
+
+    /* Setup banner */
+    .setup-banner {
+      background: rgba(20, 16, 8, 0.75);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--glass-border-gold);
+      border-radius: var(--radius-lg);
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 2.25rem;
+      display: flex;
+      align-items: center;
+      gap: 1.25rem;
+      flex-wrap: wrap;
+      box-shadow: 0 0 40px rgba(201,168,76,0.08), 0 8px 32px rgba(0,0,0,0.4);
+    }
+
+    /* No-campaign empty state */
+    .no-campaign-empty {
+      min-height: 220px;
+      background: var(--glass-bg-mid);
+      backdrop-filter: var(--blur-md);
+      -webkit-backdrop-filter: var(--blur-md);
+      border: 1px dashed rgba(201,168,76,0.2);
+      border-radius: var(--radius-lg);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      gap: 0.75rem;
+      padding: 2rem;
+      transition: border-color var(--transition);
+      text-decoration: none;
+      color: inherit;
+    }
+    .no-campaign-empty:hover {
+      border-color: rgba(201,168,76,0.4);
+    }
+
+    /* Log entry rows */
+    .log-entry {
+      display: flex;
+      gap: 1rem;
+      align-items: flex-start;
+      padding: 0.9rem 1.25rem;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      transition: background var(--transition);
+    }
+    .log-entry:last-child { border-bottom: none; }
+    .log-entry:hover { background: rgba(255,255,255,0.025); }
+
+    /* Hero CTA button pair */
+    .hero-cta {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    /* Scroll hint */
+    .scroll-hint {
+      position: absolute;
+      bottom: 2.5rem;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 2;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      animation: scrollBounce 2.4s ease-in-out infinite;
+      pointer-events: none;
+    }
+    .scroll-hint-line {
+      width: 1px;
+      height: 36px;
+      background: linear-gradient(to bottom, var(--color-primary), transparent);
+    }
+    @keyframes scrollBounce {
+      0%,100% { transform:translateX(-50%) translateY(0);   opacity:0.3; }
+      50%      { transform:translateX(-50%) translateY(6px); opacity:0.55; }
+    }
+
+    /* HP bar in portrait card */
+    .hp-pip-row {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+    .hp-pip-bar {
+      flex: 1;
+      height: 3px;
+      background: rgba(255,255,255,0.12);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .hp-pip-fill {
+      height: 100%;
+      border-radius: 2px;
+      transition: width 0.4s ease;
+    }
+
+    /* Portrait card height */
+    .portrait-card-h { height: 240px; }
+
+    @media (max-width: 600px) {
+      .portrait-card-h  { height: 200px; }
+      .scroll-hint      { display: none; }
+    }
+  </style>
 </head>
 <body>
 
@@ -24,423 +132,358 @@
 <nav class="navbar" role="navigation" aria-label="Main navigation">
   <a href="index.html" class="navbar-brand">
     <span class="brand-icon">⚔️</span>
-    DND AI
+    <span>DND AI</span>
   </a>
-
   <ul class="navbar-nav" role="list">
-    <li><a href="index.html"             class="active">🏠 Dashboard</a></li>
-    <li><a href="character-create.html"          >✨ Create Character</a></li>
-    <li><a href="character-manager.html"         >🧙 Characters</a></li>
-    <li><a href="story-manager.html"             >📖 Campaigns</a></li>
-    <li><a href="item-library.html"              >📦 Items</a></li>
-    <li><a href="game.html"                      >⚔️ Play</a></li>
+    <li><a href="index.html"            class="active">🏠 Dashboard</a></li>
+    <li><a href="character-create.html"         >✨ Create</a></li>
+    <li><a href="character-manager.html"        >🧙 Characters</a></li>
+    <li><a href="story-manager.html"            >📖 Campaigns</a></li>
+    <li><a href="item-library.html"             >📦 Items</a></li>
+    <li><a href="game.html"                     >⚔️ Play</a></li>
   </ul>
-
   <div class="navbar-actions">
     <button class="btn btn-ghost btn-sm" id="settings-btn" title="Settings">⚙️ Settings</button>
   </div>
-
   <button class="hamburger" id="hamburger-btn" aria-label="Open menu">☰</button>
 </nav>
-
-<!-- Mobile nav drawer -->
 <div class="nav-drawer" id="nav-drawer" aria-hidden="true">
   <ul class="navbar-nav" role="list">
-    <li><a href="index.html"             class="active">🏠 Dashboard</a></li>
-    <li><a href="character-create.html"          >✨ Create Character</a></li>
-    <li><a href="character-manager.html"         >🧙 Characters</a></li>
-    <li><a href="story-manager.html"             >📖 Campaigns</a></li>
-    <li><a href="item-library.html"              >📦 Items</a></li>
-    <li><a href="game.html"                      >⚔️ Play</a></li>
+    <li><a href="index.html"            class="active">🏠 Dashboard</a></li>
+    <li><a href="character-create.html"         >✨ Create Character</a></li>
+    <li><a href="character-manager.html"        >🧙 Characters</a></li>
+    <li><a href="story-manager.html"            >📖 Campaigns</a></li>
+    <li><a href="item-library.html"             >📦 Items</a></li>
+    <li><a href="game.html"                     >⚔️ Play</a></li>
   </ul>
 </div>
 <div class="nav-drawer-overlay" id="nav-overlay"></div>
 
-<!-- ── Main content ── -->
-<main class="page-wrapper">
-  <div class="page-container">
+<!-- ══════════════════════════════════════════════
+     HERO SECTION
+     ══════════════════════════════════════════════ -->
+<section class="dashboard-hero" aria-label="Hero banner">
+  <!-- Atmospheric background -->
+  <div class="dashboard-hero-bg" aria-hidden="true"></div>
+  <!-- Floating dust particles -->
+  <div class="dashboard-hero-particles" aria-hidden="true"></div>
+  <!-- Subtle circular rune -->
+  <div class="dashboard-hero-rune" aria-hidden="true"></div>
 
-    <!-- Welcome / API key warning -->
-    <div id="setup-banner" class="hidden" style="
-      background: linear-gradient(135deg, rgba(201,168,76,0.08), rgba(123,79,200,0.08));
-      border: 1px solid var(--color-primary-dark);
-      border-radius: var(--radius-lg);
-      padding: 1.5rem;
-      margin-bottom: 2rem;
-      display: flex;
-      align-items: center;
-      gap: 1.25rem;
-      flex-wrap: wrap;
-    ">
-      <div style="font-size: 2.5rem;">🔑</div>
-      <div style="flex: 1; min-width: 200px;">
-        <div style="font-family: var(--font-display); font-size: 1.1rem; color: var(--color-primary); margin-bottom: 0.3rem;">
-          Set Up Your Gemini API Key
-        </div>
-        <div style="font-size: 0.9rem; color: var(--color-text-muted);">
-          To use AI features, add your free Gemini API key. Get one at
-          <a href="https://ai.google.dev" target="_blank" rel="noopener">ai.google.dev</a>
-          — it's free with no credit card required.
-        </div>
-      </div>
-      <button class="btn btn-primary" id="setup-key-btn">⚙️ Add API Key</button>
+  <!-- Main hero text + CTA -->
+  <div class="dashboard-hero-content">
+    <div class="dashboard-hero-eyebrow">AI Dungeon Master</div>
+    <h1 class="dashboard-hero-title">The Realm Awaits</h1>
+    <p class="dashboard-hero-subtitle">
+      Forge your legend. Shape a hero, build a campaign, and let an AI Dungeon Master
+      breathe life into every encounter.
+    </p>
+    <div class="hero-cta">
+      <a href="character-create.html" class="btn btn-primary btn-lg">✨ Create a Hero</a>
+      <a href="story-manager.html"
+         class="btn btn-lg"
+         style="background:rgba(255,255,255,0.06);backdrop-filter:blur(10px);border:1px solid rgba(201,168,76,0.35);color:var(--color-primary);">
+        📖 New Campaign
+      </a>
     </div>
+  </div>
 
-    <!-- Page header -->
-    <div class="page-header" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
-      <div>
-        <h1 class="page-title" style="
-          background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
-          background-clip: text;
-        ">The Realm Awaits</h1>
-        <p class="page-subtitle">Your AI-powered DND adventure hub</p>
+  <!-- Scroll indicator -->
+  <div class="scroll-hint" aria-hidden="true">
+    <div class="scroll-hint-line"></div>
+  </div>
+  <!-- Fade bottom edge into page bg -->
+  <div class="dashboard-hero-fade" aria-hidden="true"></div>
+</section>
+
+<!-- ══════════════════════════════════════════════
+     MAIN DASHBOARD CONTENT
+     ══════════════════════════════════════════════ -->
+<main class="dashboard-content">
+
+  <!-- API key warning banner -->
+  <div id="setup-banner" class="setup-banner hidden">
+    <div style="font-size:2rem;flex-shrink:0;">🔑</div>
+    <div style="flex:1;min-width:180px;">
+      <div style="font-family:var(--font-display);font-size:1rem;color:var(--color-primary);margin-bottom:0.3rem;">
+        Set Up Your Gemini API Key
       </div>
-      <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
-        <a href="character-create.html" class="btn btn-primary">✨ New Character</a>
-        <a href="story-manager.html"    class="btn btn-accent" >📖 New Campaign</a>
+      <div style="font-family:var(--font-ui);font-size:0.85rem;color:var(--color-text-muted);">
+        Add your free key to unlock AI features. Get one at
+        <a href="https://ai.google.dev" target="_blank" rel="noopener" style="color:var(--color-primary);">ai.google.dev</a>
+        — no credit card required.
       </div>
     </div>
+    <button class="btn btn-primary btn-sm" id="setup-key-btn">⚙️ Add Key</button>
+  </div>
 
-    <!-- Quick stats row -->
-    <div id="quick-stats" style="
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-      gap: 1rem;
-      margin-bottom: 2.5rem;
-    "></div>
+  <!-- ── Quick stats ── -->
+  <div id="quick-stats" style="
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:0.75rem;
+    margin-bottom:2.75rem;
+  "></div>
 
-    <!-- Dashboard grid: Active campaign + Characters -->
-    <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 2rem; align-items: start;" id="dashboard-main">
+  <!-- ── Two-column: Campaign + Characters ── -->
+  <div class="dashboard-cols" style="margin-bottom:2.75rem;">
 
-      <!-- Active Campaign card -->
-      <section aria-labelledby="active-campaign-heading">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
-          <h2 id="active-campaign-heading" style="font-size: 1.1rem; color: var(--color-primary);">⚔️ Active Campaign</h2>
-          <a href="story-manager.html" class="btn btn-ghost btn-sm">All Campaigns</a>
-        </div>
-        <div id="active-campaign-panel"></div>
-      </section>
-
-      <!-- Characters grid -->
-      <section aria-labelledby="characters-heading">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
-          <h2 id="characters-heading" style="font-size: 1.1rem; color: var(--color-primary);">🧙 Your Characters</h2>
-          <a href="character-manager.html" class="btn btn-ghost btn-sm">All Characters</a>
-        </div>
-        <div id="characters-grid" class="character-grid"></div>
-      </section>
-
-    </div>
-
-    <!-- Recent adventures log -->
-    <section style="margin-top: 2.5rem;" aria-labelledby="log-heading">
-      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
-        <h2 id="log-heading" style="font-size: 1.1rem; color: var(--color-primary);">📜 Recent Adventure Log</h2>
+    <!-- Active campaign -->
+    <section aria-labelledby="campaign-heading">
+      <div class="section-header">
+        <span class="section-title" id="campaign-heading">Active Campaign</span>
+        <a href="story-manager.html" class="btn btn-ghost btn-sm" style="font-size:0.75rem;">All →</a>
       </div>
-      <div id="adventure-log-panel"></div>
+      <div id="active-campaign-panel"></div>
+    </section>
+
+    <!-- Characters -->
+    <section aria-labelledby="chars-heading">
+      <div class="section-header">
+        <span class="section-title" id="chars-heading">Your Heroes</span>
+        <a href="character-manager.html" class="btn btn-ghost btn-sm" style="font-size:0.75rem;">All →</a>
+      </div>
+      <div id="characters-grid" class="character-cards-grid"></div>
     </section>
 
   </div>
+
+  <!-- ── Adventure Log ── -->
+  <section aria-labelledby="log-heading">
+    <div class="section-header">
+      <span class="section-title" id="log-heading">Adventure Log</span>
+    </div>
+    <div id="adventure-log-panel"></div>
+  </section>
+
 </main>
 
-<!-- ── Settings / API Key modal ── -->
-<div class="modal-overlay hidden" id="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-  <div class="modal">
-    <div class="modal-header">
-      <span class="modal-title" id="settings-title">⚙️ Settings</span>
-      <button class="modal-close" id="settings-close" aria-label="Close settings">✕</button>
-    </div>
-    <div class="modal-body">
-
-      <!-- API Key section -->
-      <div style="margin-bottom: 1.5rem;">
-        <h3 style="font-size: 0.95rem; color: var(--color-primary); margin-bottom: 1rem; font-family: var(--font-display);">🔑 Gemini API Key</h3>
-        <div class="form-group">
-          <label for="api-key-input">API Key</label>
-          <div style="display: flex; gap: 0.5rem;">
-            <input type="password" id="api-key-input" placeholder="AIza…" autocomplete="off" />
-            <button class="btn btn-ghost btn-sm" id="toggle-key-visibility" aria-label="Toggle key visibility" style="flex-shrink: 0;">👁</button>
-          </div>
-          <div class="form-hint">Get a free key at <a href="https://ai.google.dev" target="_blank" rel="noopener">ai.google.dev</a>. Stored only in your browser.</div>
-        </div>
-        <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
-          <button class="btn btn-primary btn-sm" id="save-key-btn">💾 Save Key</button>
-          <button class="btn btn-ghost btn-sm"   id="test-key-btn">🧪 Test Key</button>
-        </div>
-        <div id="key-status" style="margin-top: 0.75rem; font-family: var(--font-ui); font-size: 0.8rem;"></div>
-      </div>
-
-      <hr class="divider" />
-
-      <!-- Data management -->
-      <div>
-        <h3 style="font-size: 0.95rem; color: var(--color-primary); margin-bottom: 1rem; font-family: var(--font-display);">💾 Data Management</h3>
-        <div id="storage-info" style="font-family: var(--font-ui); font-size: 0.8rem; color: var(--color-text-muted); margin-bottom: 1rem;"></div>
-        <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
-          <button class="btn btn-ghost btn-sm" id="export-btn">📤 Export Data</button>
-          <button class="btn btn-ghost btn-sm" id="import-btn">📥 Import Data</button>
-          <input type="file" id="import-file" accept=".json" class="hidden" />
-          <button class="btn btn-ghost btn-sm" id="clear-icons-btn">🖼️ Clear Icon Cache</button>
-          <button class="btn btn-danger btn-sm" id="clear-all-btn">🗑️ Clear All Data</button>
-        </div>
-      </div>
-
-      <hr class="divider" />
-
-      <!-- Credits -->
-      <div style="font-family: var(--font-ui); font-size: 0.8rem; color: var(--color-text-faint); line-height: 1.8;">
-        <strong style="color: var(--color-text-muted);">Free APIs used:</strong><br />
-        🤖 <a href="https://ai.google.dev" target="_blank" rel="noopener">Google Gemini Flash</a> — AI text generation<br />
-        🎨 <a href="https://pollinations.ai" target="_blank" rel="noopener">Pollinations.ai</a> — Image generation (no key needed)<br /><br />
-        <strong style="color: var(--color-text-muted);">Tech stack:</strong> Vanilla JS ES Modules · CSS Custom Properties · LocalStorage
-      </div>
-
-    </div>
-  </div>
-</div>
-
-<!-- ── Toast container ── -->
+<!-- ── Toast / Loading infrastructure ── -->
 <div id="toast-container" aria-live="polite"></div>
-
-<!-- ── Loading overlay ── -->
 <div id="loading-overlay" class="hidden" role="status" aria-live="polite">
   <div class="loading-rune" aria-hidden="true">✦</div>
   <div class="loading-message" id="loading-message">Loading…</div>
 </div>
 
 <script type="module">
-import { initPage } from './js/auth.js';
+import { initPage }     from './js/auth.js';
 import { initCommonUI } from './js/app.js';
 import {
   getAllCharacters, getAllItems, getAllStories, getActiveStory,
 } from './js/db.js';
-import { timeAgo, escapeHtml, showToast, truncate, getModifier, formatModifier } from './js/utils.js';
+import {
+  escapeHtml, showToast, truncate,
+} from './js/utils.js';
 import { hasGeminiKey } from './js/api-gemini.js';
 
-// Also wire the dashboard's own "Add API Key" banner button to open settings
-document.getElementById('setup-key-btn')?.addEventListener('click', () => {
-  document.getElementById('settings-btn')?.click();
-});
+// ── Setup banner ──────────────────────────────────────────────
+document.getElementById('setup-key-btn')?.addEventListener('click', () =>
+  document.getElementById('settings-btn')?.click()
+);
 
-// ── Dashboard rendering ───────────────────────────────────────
+// ── HP color helper ───────────────────────────────────────────
+function hpColor(pct) {
+  return pct > 60 ? 'var(--color-success)'
+       : pct > 25 ? 'var(--color-warning)'
+       :             'var(--color-danger)';
+}
 
+// ── Setup banner ──────────────────────────────────────────────
 function renderSetupBanner() {
-  const banner = document.getElementById('setup-banner');
   if (!hasGeminiKey()) {
-    banner.classList.remove('hidden');
-    banner.style.display = 'flex';
-  } else {
-    banner.classList.add('hidden');
-    banner.style.display = 'none';
+    const el = document.getElementById('setup-banner');
+    el.classList.remove('hidden');
+    el.style.display = 'flex';
   }
 }
 
+// ── Quick stats ───────────────────────────────────────────────
 function renderQuickStats() {
-  const characters = getAllCharacters();
-  const heroes     = characters.filter(c => !c.isNPC);
-  const items      = getAllItems();
-  const stories    = getAllStories();
-  const completed  = stories.filter(s => s.status === 'completed').length;
+  const heroes    = getAllCharacters().filter(c => !c.isNPC);
+  const items     = getAllItems();
+  const stories   = getAllStories();
+  const completed = stories.filter(s => s.status === 'completed').length;
 
-  const stats = [
-    { icon: '🧙', label: 'Heroes',             value: heroes.length },
-    { icon: '📖', label: 'Campaigns',           value: stories.length },
-    { icon: '⚔️', label: 'Adventures Completed', value: completed },
-    { icon: '🎒', label: 'Items Discovered',    value: items.length },
+  const STATS = [
+    { icon: '🧙', value: heroes.length,  label: 'Heroes'    },
+    { icon: '📖', value: stories.length, label: 'Campaigns' },
+    { icon: '⚔️', value: completed,      label: 'Completed' },
+    { icon: '📦', value: items.length,   label: 'Items'     },
   ];
 
-  const container = document.getElementById('quick-stats');
-  container.innerHTML = stats.map(s => `
-    <div class="card" style="text-align: center; padding: 1.25rem 1rem;">
-      <div style="font-size: 2rem; margin-bottom: 0.4rem;">${s.icon}</div>
-      <div style="font-family: var(--font-display); font-size: 1.8rem; font-weight: 700; color: var(--color-primary);">${s.value}</div>
-      <div style="font-family: var(--font-ui); font-size: 0.78rem; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.06em;">${s.label}</div>
+  document.getElementById('quick-stats').innerHTML = STATS.map(s => `
+    <div class="stat-pill">
+      <span class="stat-pill-icon" aria-hidden="true">${s.icon}</span>
+      <span class="stat-pill-value">${s.value}</span>
+      <span class="stat-pill-label">${escapeHtml(s.label)}</span>
     </div>
   `).join('');
 }
 
+// ── Active campaign ───────────────────────────────────────────
 function renderActiveCampaign() {
-  const story  = getActiveStory();
-  const panel  = document.getElementById('active-campaign-panel');
+  const story = getActiveStory();
+  const panel = document.getElementById('active-campaign-panel');
 
   if (!story) {
     panel.innerHTML = `
-      <div class="card" style="text-align: center; padding: 2.5rem 1.5rem;">
-        <div style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.4;">🗺️</div>
-        <div style="font-family: var(--font-display); font-size: 1rem; color: var(--color-text-muted); margin-bottom: 0.5rem;">No Active Campaign</div>
-        <div style="font-size: 0.875rem; color: var(--color-text-faint); margin-bottom: 1.5rem;">
-          Your saga has yet to begin. Create a campaign and let the adventure unfold.
+      <a href="story-manager.html" class="no-campaign-empty">
+        <div style="font-size:2.8rem;opacity:0.25;filter:grayscale(1);">🗺️</div>
+        <div style="font-family:var(--font-display);font-size:1rem;color:var(--color-text-muted);">No Active Campaign</div>
+        <div style="font-family:var(--font-ui);font-size:0.82rem;color:var(--color-text-faint);max-width:220px;line-height:1.55;">
+          Your saga has yet to begin. Start a campaign and let the adventure unfold.
         </div>
-        <a href="story-manager.html" class="btn btn-primary btn-sm">📖 Start a Campaign</a>
-      </div>
-    `;
+        <span class="btn btn-primary btn-sm" style="pointer-events:none;margin-top:0.25rem;">📖 Start Campaign</span>
+      </a>`;
     return;
   }
 
-  const characters = getAllCharacters().filter(c => story.characterIds?.includes(c.id));
-  const currentScene = story.scenes?.[story.currentSceneIndex];
+  const chars = getAllCharacters().filter(c => story.characterIds?.includes(c.id));
+  const scene = story.scenes?.[story.currentSceneIndex];
 
   panel.innerHTML = `
-    <div class="card card-gold" style="padding: 0; overflow: hidden;">
-      ${story.sceneImageUrl ? `
-        <div style="height: 160px; overflow: hidden; position: relative;">
-          <img src="${escapeHtml(story.sceneImageUrl)}" alt="Scene" style="width:100%; height:100%; object-fit:cover;" loading="lazy" />
-          <div style="position:absolute; bottom:0; left:0; right:0; padding: 1rem 1rem 0.5rem; background: linear-gradient(transparent, rgba(0,0,0,0.85));">
-            <div style="font-family: var(--font-display); font-size: 0.85rem; color: var(--color-text);">${escapeHtml(currentScene?.title || 'Current Scene')}</div>
-          </div>
-        </div>
-      ` : ''}
-      <div style="padding: 1.25rem;">
-        <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 0.75rem; margin-bottom: 0.75rem;">
+    <div class="campaign-feature-card" style="border:1px solid rgba(201,168,76,0.2);">
+      ${story.sceneImageUrl
+        ? `<img class="campaign-feature-card-img" src="${escapeHtml(story.sceneImageUrl)}" alt="Scene image" loading="lazy" />`
+        : `<div style="position:absolute;inset:0;background:linear-gradient(135deg,#0f0d08,#1a1510);"></div>`}
+      <div class="campaign-feature-card-overlay"></div>
+      <div class="campaign-feature-card-body">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:0.75rem;margin-bottom:0.55rem;">
           <div>
-            <div style="font-family: var(--font-display); font-size: 1.05rem; color: var(--color-primary);">${escapeHtml(story.title)}</div>
-            <div style="font-family: var(--font-ui); font-size: 0.75rem; color: var(--color-text-faint);">${escapeHtml(story.setting || '')}</div>
+            <div style="font-family:var(--font-display);font-size:1.05rem;color:#f0d878;text-shadow:0 1px 10px rgba(0,0,0,0.9);">
+              ${escapeHtml(story.title)}
+            </div>
+            ${story.setting ? `<div style="font-family:var(--font-ui);font-size:0.7rem;color:rgba(232,228,216,0.5);margin-top:0.1rem;">${escapeHtml(story.setting)}</div>` : ''}
           </div>
-          <span class="badge badge-success">Active</span>
+          <span class="badge badge-success" style="flex-shrink:0;">Active</span>
         </div>
 
-        <p style="font-size: 0.875rem; color: var(--color-text-muted); font-style: italic; margin-bottom: 1rem;">
-          "${escapeHtml(truncate(story.premise || 'A grand adventure awaits…', 120))}"
-        </p>
+        ${scene ? `<div style="font-family:var(--font-ui);font-size:0.68rem;color:rgba(201,168,76,0.65);margin-bottom:0.45rem;letter-spacing:0.03em;">📍 ${escapeHtml(scene.title || 'Current Scene')}</div>` : ''}
 
-        ${characters.length > 0 ? `
-          <div style="display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; margin-bottom: 1rem;">
-            <span style="font-family: var(--font-ui); font-size: 0.72rem; color: var(--color-text-faint);">Heroes:</span>
-            ${characters.map(c => `
-              <span class="badge badge-muted">${escapeHtml(c.name)}</span>
-            `).join('')}
-          </div>
-        ` : ''}
+        ${story.premise ? `
+          <p style="font-family:var(--font-body);font-size:0.85rem;color:rgba(232,228,216,0.62);font-style:italic;line-height:1.5;margin-bottom:0.85rem;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">
+            "${escapeHtml(truncate(story.premise, 100))}"
+          </p>` : ''}
 
-        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-          <a href="game.html" class="btn btn-primary btn-sm">⚔️ Continue Adventure</a>
-          <a href="story-manager.html" class="btn btn-ghost btn-sm">📖 Campaign Details</a>
+        ${chars.length > 0 ? `
+          <div style="display:flex;gap:0.35rem;flex-wrap:wrap;align-items:center;margin-bottom:0.85rem;">
+            ${chars.map(c => `
+              <span style="display:inline-flex;align-items:center;gap:0.3em;background:rgba(255,255,255,0.08);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.12);border-radius:20px;padding:0.2em 0.55em;font-family:var(--font-ui);font-size:0.67rem;color:rgba(232,228,216,0.75);">
+                ${c.portrait ? `<img src="${escapeHtml(c.portrait)}" style="width:14px;height:14px;border-radius:50%;object-fit:cover;">` : '🧙'}
+                ${escapeHtml(c.name)}
+              </span>`).join('')}
+          </div>` : ''}
+
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+          <a href="game.html" class="btn btn-primary btn-sm">⚔️ Continue</a>
+          <a href="story-manager.html"
+             class="btn btn-sm"
+             style="background:rgba(255,255,255,0.07);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.18);color:rgba(232,228,216,0.65);">
+            Details
+          </a>
         </div>
       </div>
-    </div>
-  `;
+    </div>`;
 }
 
+// ── Characters grid ───────────────────────────────────────────
 function renderCharacters() {
   const characters = getAllCharacters().filter(c => !c.isNPC);
   const grid       = document.getElementById('characters-grid');
 
   if (characters.length === 0) {
     grid.innerHTML = `
-      <div class="empty-state" style="grid-column: 1/-1; padding: 3rem 1rem;">
-        <div class="empty-state-icon">🧙</div>
-        <div class="empty-state-title">No Characters Yet</div>
-        <div class="empty-state-text">
+      <div style="grid-column:1/-1;display:flex;flex-direction:column;align-items:center;text-align:center;padding:2.5rem 1rem;gap:0.85rem;">
+        <div style="font-size:3rem;opacity:0.18;filter:grayscale(1);">🧙</div>
+        <div style="font-family:var(--font-display);color:var(--color-text-muted);">No Heroes Yet</div>
+        <div style="font-family:var(--font-ui);font-size:0.82rem;color:var(--color-text-faint);max-width:230px;line-height:1.55;">
           Every legend begins with a hero. Forge your first character and let the story begin.
         </div>
-        <a href="character-create.html" class="btn btn-primary" style="margin-top: 0.5rem;">✨ Create Character</a>
-      </div>
-    `;
+        <a href="character-create.html" class="btn btn-primary btn-sm" style="margin-top:0.25rem;">✨ Create Hero</a>
+      </div>`;
     return;
   }
 
   grid.innerHTML = characters.map(char => {
-    const hpPct    = Math.round((char.stats.hp / char.stats.maxHp) * 100);
-    const hpClass  = hpPct > 60 ? 'high' : hpPct > 25 ? 'mid' : 'low';
-    const portrait = char.portrait
-      ? `<img src="${escapeHtml(char.portrait)}" alt="${escapeHtml(char.name)}" class="portrait portrait-md" style="width:100%; height:100%; object-fit:cover;" loading="lazy" />`
-      : `<div style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; font-size: 2rem; background: var(--color-surface-2);">🧙</div>`;
+    const pct = Math.round(Math.max(0, Math.min(100, (char.stats.hp / char.stats.maxHp) * 100)));
+
+    const portraitHtml = char.portrait
+      ? `<img class="card-portrait-img" src="${escapeHtml(char.portrait)}" alt="${escapeHtml(char.name)}" loading="lazy" />`
+      : `<div class="card-portrait-placeholder">🧙</div>`;
+
+    const condBadge = (char.conditions?.length > 0)
+      ? `<div style="font-family:var(--font-ui);font-size:0.62rem;color:var(--color-danger);margin-top:0.3rem;">⚠️ ${escapeHtml(char.conditions.slice(0,2).join(', '))}${char.conditions.length > 2 ? ` +${char.conditions.length - 2}` : ''}</div>`
+      : '';
 
     return `
-      <a href="character-manager.html?id=${char.id}" class="card card-interactive" style="text-decoration: none; display: block; padding: 0; overflow: hidden;">
-        <div style="height: 100px; position: relative; overflow: hidden;">
-          ${portrait}
-        </div>
-        <div style="padding: 0.9rem;">
-          <div style="font-family: var(--font-display); font-size: 0.95rem; color: var(--color-text); margin-bottom: 0.2rem;">${escapeHtml(char.name)}</div>
-          <div style="font-family: var(--font-ui); font-size: 0.72rem; color: var(--color-text-muted); margin-bottom: 0.65rem;">
-            ${escapeHtml(char.race)} ${escapeHtml(char.class)} · Level ${char.level}
+      <a href="character-manager.html?id=${char.id}"
+         class="card-portrait portrait-card-h"
+         style="text-decoration:none;">
+        ${portraitHtml}
+        <div class="card-portrait-overlay"></div>
+        <div class="card-portrait-body">
+          <div style="font-family:var(--font-display);font-size:0.9rem;color:#fff;text-shadow:0 1px 8px rgba(0,0,0,0.95);margin-bottom:0.15rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+            ${escapeHtml(char.name)}
           </div>
-          <div class="hp-display" style="margin-bottom: 0.4rem;">
-            <div class="progress-bar" style="flex: 1;">
-              <div class="progress-bar-fill ${hpClass}" style="width: ${hpPct}%"></div>
-            </div>
-            <span class="hp-numbers">${char.stats.hp}/${char.stats.maxHp}</span>
+          <div style="font-family:var(--font-ui);font-size:0.63rem;color:rgba(232,228,216,0.52);margin-bottom:0.45rem;">
+            ${escapeHtml(char.race)} ${escapeHtml(char.class)} · Lv ${char.level}
           </div>
-          ${char.conditions?.length > 0 ? `
-            <div style="font-family: var(--font-ui); font-size: 0.7rem; color: var(--color-danger);">
-              ⚠️ ${char.conditions.slice(0, 2).map(c => escapeHtml(c)).join(', ')}${char.conditions.length > 2 ? ` +${char.conditions.length - 2}` : ''}
+          <div class="hp-pip-row">
+            <div class="hp-pip-bar">
+              <div class="hp-pip-fill" style="width:${pct}%;background:${hpColor(pct)};"></div>
             </div>
-          ` : ''}
+            <span style="font-family:var(--font-ui);font-size:0.58rem;color:rgba(232,228,216,0.48);white-space:nowrap;">
+              ${char.stats.hp}/${char.stats.maxHp}
+            </span>
+          </div>
+          ${condBadge}
         </div>
-      </a>
-    `;
+      </a>`;
   }).join('');
 }
 
+// ── Adventure log ─────────────────────────────────────────────
 function renderAdventureLog() {
   const characters = getAllCharacters().filter(c => !c.isNPC);
   const panel      = document.getElementById('adventure-log-panel');
 
-  // Collect all log entries with character info, sort by most recent
   const entries = [];
   for (const char of characters) {
     for (const entry of (char.adventureLog || [])) {
-      entries.push({ entry, charName: char.name, charId: char.id });
+      entries.push({ entry, charName: char.name });
     }
   }
 
   if (entries.length === 0) {
     panel.innerHTML = `
-      <div class="card" style="text-align: center; padding: 2rem;">
-        <div style="font-size: 2rem; margin-bottom: 0.75rem; opacity: 0.3;">📜</div>
-        <div style="font-family: var(--font-body); font-style: italic; color: var(--color-text-faint);">
+      <div class="card-glass" style="padding:2rem 1.5rem;text-align:center;">
+        <div style="font-size:1.8rem;opacity:0.18;margin-bottom:0.75rem;">📜</div>
+        <p style="font-family:var(--font-body);font-style:italic;color:var(--color-text-faint);font-size:0.95rem;line-height:1.65;">
           The pages of history await your deeds. Begin an adventure to fill this log.
-        </div>
-      </div>
-    `;
+        </p>
+      </div>`;
     return;
   }
 
-  // Show last 10 entries
-  const recent = entries.slice(-10).reverse();
+  const recent = entries.slice(-12).reverse();
   panel.innerHTML = `
-    <div class="card" style="padding: 0; overflow: hidden;">
-      ${recent.map((e, i) => `
-        <div style="
-          padding: 0.85rem 1.25rem;
-          ${i < recent.length - 1 ? 'border-bottom: 1px solid var(--color-border);' : ''}
-          display: flex;
-          gap: 1rem;
-          align-items: flex-start;
-        ">
-          <div style="flex-shrink: 0; margin-top: 0.1rem; color: var(--color-primary); font-size: 0.8rem;">📜</div>
-          <div style="flex: 1; min-width: 0;">
-            <div style="font-size: 0.875rem; color: var(--color-text); line-height: 1.55;">${escapeHtml(e.entry)}</div>
-            <div style="font-family: var(--font-ui); font-size: 0.72rem; color: var(--color-text-faint); margin-top: 0.2rem;">
-              — ${escapeHtml(e.charName)}
-            </div>
+    <div class="card-glass" style="overflow:hidden;">
+      ${recent.map(e => `
+        <div class="log-entry">
+          <span style="flex-shrink:0;color:var(--color-primary);opacity:0.5;font-size:0.72rem;margin-top:0.15rem;">📜</span>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:0.875rem;color:var(--color-text);line-height:1.55;">${escapeHtml(e.entry)}</div>
+            <div style="font-family:var(--font-ui);font-size:0.67rem;color:var(--color-text-faint);margin-top:0.2rem;">— ${escapeHtml(e.charName)}</div>
           </div>
-        </div>
-      `).join('')}
-    </div>
-  `;
+        </div>`).join('')}
+    </div>`;
 }
 
-function renderDashboard() {
-  renderSetupBanner();
-  renderQuickStats();
-  renderActiveCampaign();
-  renderCharacters();
-  renderAdventureLog();
-}
-
-// Responsive: stack campaign + characters on small screens
-function adjustLayout() {
-  const main = document.getElementById('dashboard-main');
-  if (!main) return;
-  if (window.innerWidth < 900) {
-    main.style.gridTemplateColumns = '1fr';
-  } else {
-    main.style.gridTemplateColumns = '1fr 2fr';
-  }
+// ── Responsive quick-stats grid ───────────────────────────────
+function adjustStatsGrid() {
+  const el = document.getElementById('quick-stats');
+  if (!el) return;
+  el.style.gridTemplateColumns = window.innerWidth < 480 ? 'repeat(2,1fr)' : 'repeat(4,1fr)';
 }
 
 // ── Init ──────────────────────────────────────────────────────
@@ -448,9 +491,13 @@ function adjustLayout() {
   const user = await initPage();
   if (!user) return;
   initCommonUI();
-  renderDashboard();
-  adjustLayout();
-  window.addEventListener('resize', adjustLayout);
+  renderSetupBanner();
+  renderQuickStats();
+  renderActiveCampaign();
+  renderCharacters();
+  renderAdventureLog();
+  adjustStatsGrid();
+  window.addEventListener('resize', adjustStatsGrid);
 })();
 </script>
 </body>

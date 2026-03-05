@@ -690,6 +690,209 @@
   opacity: 1;
 }
 
+/* ── Glassmorphism card ── */
+.card-glass {
+  background: var(--glass-bg);
+  backdrop-filter: var(--blur-md);
+  -webkit-backdrop-filter: var(--blur-md);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.06);
+  transition: all var(--transition);
+}
+.card-glass:hover {
+  border-color: var(--glass-border-gold);
+  box-shadow: 0 12px 48px rgba(0,0,0,0.65), inset 0 1px 0 rgba(201,168,76,0.08);
+}
+
+.card-glass-gold {
+  background: rgba(20, 16, 6, 0.72);
+  backdrop-filter: var(--blur-md);
+  -webkit-backdrop-filter: var(--blur-md);
+  border: 1px solid var(--glass-border-gold);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(201,168,76,0.05), inset 0 1px 0 rgba(201,168,76,0.1);
+}
+
+/* ── Portrait card (image fills card, text floats on gradient) ── */
+.card-portrait {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  display: block;
+  text-decoration: none;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+.card-portrait:hover {
+  transform: translateY(-4px) scale(1.01);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.8), 0 0 0 1px rgba(201,168,76,0.3);
+}
+.card-portrait-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.6s ease;
+  display: block;
+}
+.card-portrait:hover .card-portrait-img {
+  transform: scale(1.06);
+}
+.card-portrait-overlay {
+  position: absolute;
+  inset: 0;
+  background: var(--grad-dark-up);
+  pointer-events: none;
+}
+.card-portrait-body {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 1rem;
+}
+.card-portrait-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 3.5rem;
+  background: linear-gradient(135deg, var(--color-surface-2), var(--color-surface-3));
+}
+
+/* ── Hero section ── */
+.hero-section {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+.hero-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+.hero-bg-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.35;
+}
+.hero-gradient {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(to bottom, rgba(13,13,15,0.6) 0%, rgba(13,13,15,0.1) 40%, rgba(13,13,15,0.1) 60%, rgba(13,13,15,0.95) 100%),
+    radial-gradient(ellipse at 30% 50%, rgba(123,79,200,0.2) 0%, transparent 60%),
+    radial-gradient(ellipse at 70% 30%, rgba(201,168,76,0.15) 0%, transparent 55%);
+}
+.hero-content {
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Stat pill (glassmorphism) ── */
+.stat-pill {
+  background: var(--glass-bg);
+  backdrop-filter: var(--blur-sm);
+  -webkit-backdrop-filter: var(--blur-sm);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  padding: 1.1rem 1rem;
+  text-align: center;
+  transition: all var(--transition);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+}
+.stat-pill:hover {
+  border-color: var(--glass-border-gold);
+  background: rgba(20,18,10,0.65);
+}
+.stat-pill-value {
+  font-family: var(--font-display);
+  font-size: 2.2rem;
+  font-weight: 700;
+  color: var(--color-primary);
+  line-height: 1;
+  display: block;
+  margin-bottom: 0.3rem;
+}
+.stat-pill-icon {
+  font-size: 1.4rem;
+  display: block;
+  margin-bottom: 0.3rem;
+}
+.stat-pill-label {
+  font-family: var(--font-ui);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-muted);
+  display: block;
+}
+
+/* ── Section title row ── */
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.1rem;
+  gap: 1rem;
+}
+.section-title {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.section-title::before {
+  content: '';
+  display: inline-block;
+  width: 3px;
+  height: 1em;
+  background: var(--color-primary);
+  border-radius: 2px;
+  opacity: 0.7;
+}
+
+/* ── Campaign feature card ── */
+.campaign-feature-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  min-height: 260px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+.campaign-feature-card-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.6s ease;
+}
+.campaign-feature-card:hover .campaign-feature-card-img {
+  transform: scale(1.04);
+}
+.campaign-feature-card-overlay {
+  position: absolute;
+  inset: 0;
+  background: var(--grad-dark-up);
+}
+.campaign-feature-card-body {
+  position: relative;
+  z-index: 1;
+  padding: 1.5rem;
+}
+
 /* ── Responsive ── */
 @media (max-width: 640px) {
   .form-row-2, .form-row-3 {

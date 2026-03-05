@@ -239,12 +239,13 @@ function renderSetupBanner() {
 
 function renderQuickStats() {
   const characters = getAllCharacters();
+  const heroes     = characters.filter(c => !c.isNPC);
   const items      = getAllItems();
   const stories    = getAllStories();
   const completed  = stories.filter(s => s.status === 'completed').length;
 
   const stats = [
-    { icon: '🧙', label: 'Characters',         value: characters.length },
+    { icon: '🧙', label: 'Heroes',             value: heroes.length },
     { icon: '📖', label: 'Campaigns',           value: stories.length },
     { icon: '⚔️', label: 'Adventures Completed', value: completed },
     { icon: '🎒', label: 'Items Discovered',    value: items.length },
@@ -323,7 +324,7 @@ function renderActiveCampaign() {
 }
 
 function renderCharacters() {
-  const characters = getAllCharacters();
+  const characters = getAllCharacters().filter(c => !c.isNPC);
   const grid       = document.getElementById('characters-grid');
 
   if (characters.length === 0) {
@@ -375,7 +376,7 @@ function renderCharacters() {
 }
 
 function renderAdventureLog() {
-  const characters = getAllCharacters();
+  const characters = getAllCharacters().filter(c => !c.isNPC);
   const panel      = document.getElementById('adventure-log-panel');
 
   // Collect all log entries with character info, sort by most recent

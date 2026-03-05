@@ -178,7 +178,9 @@ WRITE (always narrate the outcome in your final turn):
                 "remove_condition" (value = condition string)
 - advance_scene:    {"tool":"advance_scene","storyId":"${story.id}","newSceneTitle":"<title>","newSceneDescription":"<vivid desc>"}
 - create_item:      {"tool":"create_item","name":"<name>","type":"weapon|armor|potion|misc|quest","description":"<desc>","rarity":"common|uncommon|rare|legendary","stats":{}}
-  → Returns itemId. Use it immediately in add_item in your next turn.
+  → Returns itemId. Use it immediately in add_item in your NEXT turn.
+  ⚠️ NEVER put create_item and add_item in the same turn — you don't know the itemId yet.
+     create_item runs first, then the system gives you the real itemId to use in add_item.
 
 NPC / WORLD CHARACTER:
 - introduce_npc:

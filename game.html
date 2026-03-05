@@ -1356,12 +1356,13 @@ function openSlideover(charId) {
 
   const invHtml = char.inventory.map(inst => {
     const item = getItem(inst.itemId);
-    if (!item) return '';
+    const icon = item?.iconBase64
+      ? `<img src="${item.iconBase64}" style="width:24px;height:24px;border-radius:3px;vertical-align:middle;" />`
+      : '⚔️';
+    const name = item ? escHtml(item.name) : `<span style="color:var(--color-text-faint);font-style:italic;">Loading…</span>`;
     return `<div style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid var(--color-border);">
-      <span style="font-size:0.85rem;">
-        ${item.iconBase64 ? `<img src="${item.iconBase64}" style="width:24px;height:24px;border-radius:3px;vertical-align:middle;" />` : '⚔️'}
-      </span>
-      <span style="font-family:var(--font-ui);font-size:0.8rem;flex:1;">${escHtml(item.name)}</span>
+      <span style="font-size:0.85rem;">${icon}</span>
+      <span style="font-family:var(--font-ui);font-size:0.8rem;flex:1;">${name}</span>
       <span style="font-family:var(--font-ui);font-size:0.7rem;color:var(--color-text-faint);">x${inst.quantity}</span>
     </div>`;
   }).join('');

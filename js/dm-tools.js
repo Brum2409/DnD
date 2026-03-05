@@ -643,12 +643,28 @@ export function formatToolResultsForRePrompt(toolResults) {
 
 /**
  * Execute an array of tool calls parsed from the DM response.
+ * Handles the case where create_item and add_item appear in the same batch:
+ * the DM can't know the UUID before create_item runs, so if add_item references
+ * an itemId that doesn't exist in cache we substitute the most recently created
+ * item's real ID.
  * @param {Object[]} toolCalls
  * @returns {Promise<Array<{tool:string, params:Object, result:any}>>}
  */
 export async function executeDMTools(toolCalls) {
   const results = [];
+  // Track item IDs created in this batch so we can patch same-batch add_item calls
+  let lastCreatedItemId = null;
+
   for (const call of toolCalls) {
+    // If add_item references an itemId not in cache, substitute the last created
+    // item from this same batch (handles DM writing both calls in one turn)
+    if (call.tool === 'add_item' && call.itemId && lastCreatedItemId) {
+      if (!db.getItem(call.itemId)) {
+        console.warn(`[dm-tools] add_item: itemId "${call.itemId}" not in cache — substituting last created item "${lastCreatedItemId}"`);
+        call.itemId = lastCreatedItemId;
+      }
+    }
+
     const fn = DM_TOOLS[call.tool];
     if (!fn) {
       results.push({ tool: call.tool, params: call, result: { error: `Unknown tool: ${call.tool}` } });
@@ -656,6 +672,9 @@ export async function executeDMTools(toolCalls) {
     }
     try {
       const result = await fn(call);
+      if (call.tool === 'create_item' && result.itemId && !result.error) {
+        lastCreatedItemId = result.itemId;
+      }
       results.push({ tool: call.tool, params: call, result });
     } catch (err) {
       results.push({ tool: call.tool, params: call, result: { error: err.message } });

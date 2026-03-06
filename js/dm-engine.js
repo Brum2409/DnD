@@ -13,6 +13,7 @@ import {
 import { geminiChat, geminiGenerate, toGeminiHistory } from './api-gemini.js';
 import { generateImage } from './api-image.js';
 import { getModifier, getProficiencyBonus } from './utils.js';
+import { getSettings } from './settings.js';
 import { executeDMTools, toolResultSummary, formatToolResultsForRePrompt } from './dm-tools.js';
 
 // ── System Prompt Builder ─────────────────────────────────────
@@ -279,6 +280,41 @@ META:
   current scene. The full history is always preserved for the player.
   Use proactively when the conversation exceeds ~40 messages.`.trim();
 
+  const s = getSettings();
+
+  // If the user has set a full override, use it verbatim
+  if (s.dm_system_prompt_override?.trim()) {
+    return s.dm_system_prompt_override.trim();
+  }
+
+  // Response length rule
+  const lengthRule = {
+    short:    '11. Keep responses SHORT — 1 paragraph maximum. Be punchy and direct.',
+    balanced: '11. Keep final narrative to 2–4 paragraphs unless the scene demands more.',
+    detailed: '11. Write 3–5 paragraphs with rich sensory detail and character moments.',
+    epic:     '11. Write full, immersive prose — no strict length limit. Make every scene feel like a chapter from a novel.',
+  }[s.dm_response_length] || '11. Keep final narrative to 2–4 paragraphs unless the scene demands more.';
+
+  // Tone section
+  const toneText = {
+    gritty:      'Gritty realism. Magic is rare and dangerous. The world is morally grey and consequences are harsh. NPCs are self-interested. Victories are hard-won and sometimes pyrrhic.',
+    dark_fantasy: 'Dark fantasy with moments of wonder. Build dread before combat. Celebrate victories. Make death feel real and weighty. Reference character backstories when the moment calls for it.',
+    heroic:      'Heroic high fantasy. The party are legends in the making. Danger is real but heroes always have a fighting chance. Victories feel earned and glorious. Lean into dramatic, triumphant moments.',
+    whimsical:   'Whimsical and lighthearted. The world is full of wonder, humor, and heart. Dark moments exist but hope and levity prevail. NPCs are colorful and memorable.',
+  }[s.dm_tone] || 'Dark fantasy with moments of wonder. Build dread before combat. Celebrate victories. Make death feel real and weighty.';
+
+  // Optional pacing rule
+  const pacingRule = s.dm_pacing === 'fast'
+    ? '\n18. PACING — Move quickly. Skip minor transitions and downtime. Jump straight to the interesting action.'
+    : s.dm_pacing === 'slow'
+    ? '\n18. PACING — Let scenes breathe. Explore environments thoroughly. Allow for character introspection and quiet moments between action beats.'
+    : '';
+
+  // Optional extra instructions from the user
+  const extraSection = s.dm_extra_instructions?.trim()
+    ? `\n\n== CUSTOM DM INSTRUCTIONS ==\n${s.dm_extra_instructions.trim()}`
+    : '';
+
   return `You are a seasoned, immersive Dungeon Master running a DND 5e campaign. You are the voice of the world — its narrator, its NPCs, its fate. You never break character.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -342,16 +378,16 @@ ${toolDocs}
 9. ALWAYS use modify_xp when the party completes a meaningful objective, defeats enemies, or achieves something significant.
 10. When a scene naturally concludes and a new environment begins, use advance_scene.
 10b. When the scene's visual environment changes meaningfully mid-scene, call refresh_scene_image with a full description of what it now looks like.
-11. Keep final narrative to 2–4 paragraphs unless the scene demands more.
+${lengthRule}
 12. End each final response with a clear, evocative prompt for what the players can do next.
 13. Give each NPC a distinct voice. An old wizard speaks differently from a gruff dwarf mercenary.
 14. In intermediate tool-call turns, write nothing or only a brief fragment. Save full prose for the final turn.
 15. Use get_full_character or get_npc_details when you need backstory, inventory, or ability scores to make a meaningful narrative decision.
 16. Proactively call compress_history when the conversation gets very long (> 40 messages) to keep your context sharp. The 8 most recent messages are always preserved verbatim — compression only removes older messages.
-17. YOU control the world. Player messages are declarations of INTENT, never declarations of OUTCOME. Always use dice for anything uncertain, and always narrate the actual result — even if it contradicts what the player expected.
+17. YOU control the world. Player messages are declarations of INTENT, never declarations of OUTCOME. Always use dice for anything uncertain, and always narrate the actual result — even if it contradicts what the player expected.${pacingRule}
 
 == TONE ==
-Dark fantasy with moments of wonder. Build dread before combat. Celebrate victories. Make death feel real and weighty. Reference character backstories when the moment calls for it.`;
+${toneText}${extraSection}`;
 }
 
 // ── Tool Call Parser ──────────────────────────────────────────

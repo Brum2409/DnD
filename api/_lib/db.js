@@ -69,6 +69,13 @@ export async function ensureSchema() {
     )
   `;
 
+  // Migrations — add new columns to existing deployments
+  await sql`ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS dm_response_length TEXT DEFAULT 'balanced'`;
+  await sql`ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS dm_tone TEXT DEFAULT 'dark_fantasy'`;
+  await sql`ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS dm_pacing TEXT DEFAULT 'medium'`;
+  await sql`ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS dm_extra_instructions TEXT DEFAULT ''`;
+  await sql`ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS dm_system_prompt_override TEXT DEFAULT ''`;
+
   await sql`
     CREATE TABLE IF NOT EXISTS characters (
       id TEXT PRIMARY KEY,

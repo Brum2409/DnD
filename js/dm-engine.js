@@ -158,10 +158,15 @@ EXAMPLE — fetching context:
 • Any skill check or saving throw           → roll_dice
 • Any damage roll (after a hit)             → roll_dice (e.g. "2d6+2")
 • NPC / creature takes damage               → modify_hp on that NPC's ID
-• New named NPC appears for the first time  → introduce_npc
-  ⚠️ ALREADY-KNOWN NPC? If the NPC is listed in CHARACTERS IN CURRENT SCENE or
-     KNOWN CHARACTERS above, use their existing ID — DO NOT call introduce_npc again.
-     Call npc_speak with their existing npcId directly.
+• New named NPC/enemy appears              → introduce_npc
+  — Unique characters (ally/merchant/neutral/boss): introduce ONCE per story.
+    If already in CHARACTERS IN CURRENT SCENE or KNOWN CHARACTERS, use their
+    existing ID directly — DO NOT call introduce_npc again.
+  — Generic enemies/creatures (enemy/creature): call once PER INSTANCE.
+    Three goblins = three introduce_npc calls, each gets its own npcId.
+• NPC/enemy is killed (HP reaches 0)       → modify_hp handles scene removal automatically.
+  No extra tool call needed — just narrate the death.
+• NPC leaves the scene alive (flees, departs, exits) → remove_npc_from_scene
 • NPC says ANYTHING out loud               → npc_speak (NEVER write NPC speech in narration)
 • Party moves to a new location / scene     → advance_scene
 • End of a significant encounter            → log_event for each character
@@ -263,11 +268,19 @@ NPC / WORLD CHARACTER:
 - introduce_npc:
   {"tool":"introduce_npc","storyId":"${story.id}","name":"<name>","role":"enemy|merchant|ally|neutral|boss|creature","race":"<race>","personality":"<1-2 sentences>","appearance":"<1-2 sentences>","hp":<number>,"ac":<number>}
   → Returns npcId. Use in npc_speak immediately after.
-  ⚠️ ONLY call this for characters NOT already listed in the quick-reference sections above.
+  ⚠️ UNIQUE characters (role=ally/merchant/neutral/boss): ONLY call once per story.
      If the character is already in CHARACTERS IN CURRENT SCENE or KNOWN CHARACTERS,
      skip this tool and use npc_speak with their existing ID directly.
-     (The tool will safely reuse the existing character if you call it for a known NPC, but
-      it is always better to use the existing ID directly to avoid unnecessary work.)
+  ✓ GENERIC ENEMIES/CREATURES (role=enemy/creature): You MAY call this multiple times
+     to create separate instances — e.g. call it 3 times for 3 Goblins, 2 times for
+     2 Zombies. Each call creates a distinct combatant with its own HP/ID.
+
+- remove_npc_from_scene:
+  {"tool":"remove_npc_from_scene","storyId":"${story.id}","npcId":"<id>"}
+  {"tool":"remove_npc_from_scene","storyId":"${story.id}","npcName":"<name>"}
+  Removes an NPC from the current scene when they leave or flee while still alive.
+  They remain a known character and can return in a future scene.
+  ⚠️ Do NOT call this for NPCs who die — death is handled automatically by modify_hp.
 
 - npc_speak:
   {"tool":"npc_speak","npcId":"<id>","speech":"What they say…"}
@@ -378,7 +391,11 @@ ${toolDocs}
 3. React meaningfully to every player action. Choices have real consequences.
 4. NEVER invent dice rolls. Call roll_dice and narrate from the real result.
 5. Build tension gradually. Not every action needs combat.
-6. Every named NPC/creature is a WORLD CHARACTER. Call introduce_npc the FIRST time they appear. For ANY subsequent appearance — whether they return to the current scene or enter a new one — use their existing npcId from the quick-reference above. NEVER call introduce_npc for a character already listed in CHARACTERS IN CURRENT SCENE or KNOWN CHARACTERS. Use npc_speak for ALL dialogue — never write NPC lines in narration.
+6. Every named NPC/creature is a WORLD CHARACTER with a lifecycle:
+   • INTRODUCTION: Call introduce_npc the first time they appear. Generic enemies (role=enemy/creature) get one introduce_npc call per individual — three skeletons = three calls. Unique named characters (ally/merchant/neutral/boss) are introduced once per story; use their existing ID for all future appearances.
+   • DEATH: When modify_hp brings an NPC to 0 HP they are automatically removed from the scene. Just narrate the death — no extra tool call needed.
+   • DEPARTURE: When a living NPC leaves the scene (flees, exits, is dismissed), call remove_npc_from_scene. They stay known and can return later.
+   • DIALOGUE: Use npc_speak for ALL spoken lines — never write NPC dialogue in narration prose.
 7. ALWAYS use modify_hp for any damage or healing — for both PCs and NPCs.
 8. ALWAYS use add_item when a character picks up, receives, or loots any item. Use create_item first if the item is new.
 8b. ALWAYS use use_spell_slot when a character casts a levelled spell. Check the quick-ref for available slots first — if 0 remain, the character CANNOT cast that spell level and must use a different level or choose a cantrip.
@@ -472,6 +489,12 @@ function buildToolCallStatusMessage(toolCalls) {
       }
       case 'introduce_npc':
         return `🎭 Introducing ${tc.name}`;
+      case 'remove_npc_from_scene': {
+        const name = tc.npcName
+          || (tc.npcId ? getCharacter(tc.npcId)?.name : null)
+          || 'NPC';
+        return `🚪 ${name} leaves the scene`;
+      }
       case 'npc_speak': {
         const name = tc.npcName
           || (tc.npcId ? getCharacter(tc.npcId)?.name : null)

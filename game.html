@@ -897,6 +897,10 @@ async function boot() {
 }
 
 // ── Scene rendering ───────────────────────────────────────────
+
+// Single poll interval — ensures only one is ever running at a time.
+let _scenePollInterval = null;
+
 function renderScene() {
   if (!activeStory) return;
   const scene = activeStory.scenes[activeStory.currentSceneIndex]
@@ -908,46 +912,80 @@ function renderScene() {
   const shimmer = document.getElementById('scene-shimmer');
   const imageUrl = scene?.imageUrl || activeStory.sceneImageUrl;
 
-  if (imageUrl && imageUrl !== img.src) {
-    // Crossfade: fade out current, load new, fade in
+  // Use a data attribute to track the URL we're currently showing/loading.
+  // This is deterministic (we control it) unlike img.src which browsers may normalize.
+  const displayedUrl = img.dataset.displayedUrl || '';
+
+  if (imageUrl && imageUrl !== displayedUrl) {
+    // New image to show — mark immediately so concurrent renderScene() calls
+    // triggered by the same update don't each start their own preload.
+    img.dataset.displayedUrl = imageUrl;
     img.classList.remove('loaded');
     shimmer.classList.remove('hidden-shimmer');
 
     const newImg = new Image();
     newImg.onload = () => {
+      // Guard: only apply if this is still the intended image
+      if (img.dataset.displayedUrl !== imageUrl) return;
       img.src = imageUrl;
       img.classList.add('loaded');
       shimmer.classList.add('hidden-shimmer');
     };
     newImg.onerror = () => {
-      // Keep shimmer visible if image fails
+      // Image failed to load — clear tracking so a future retry is possible,
+      // then hide the shimmer (a broken image is better than an infinite spinner).
+      if (img.dataset.displayedUrl === imageUrl) {
+        img.dataset.displayedUrl = '';
+        shimmer.classList.add('hidden-shimmer');
+      }
     };
     newImg.src = imageUrl;
-  } else if (imageUrl && img.src.endsWith(imageUrl.split('/').pop())) {
-    // Already showing this image — just ensure it's visible
-    img.classList.add('loaded');
-    shimmer.classList.add('hidden-shimmer');
+  } else if (imageUrl && imageUrl === displayedUrl) {
+    // Same URL already being shown or in-flight — just ensure final visible state
+    // if the img element has caught up (onload already fired).
+    if (img.src === imageUrl) {
+      img.classList.add('loaded');
+      shimmer.classList.add('hidden-shimmer');
+    }
+    // else: onload is still pending, it will handle the state when it fires
   } else if (!imageUrl) {
-    // No image yet — show shimmer and poll
+    // No image yet — show shimmer and start polling (only one poll at a time)
     img.classList.remove('loaded');
     shimmer.classList.remove('hidden-shimmer');
-    pollSceneImage(activeStory.id, scene?.id);
+    startSceneImagePoll(activeStory.id, scene?.id);
   }
 }
 
-function pollSceneImage(storyId, sceneId) {
+function startSceneImagePoll(storyId, sceneId) {
+  // Cancel any existing poll before starting a new one
+  if (_scenePollInterval !== null) {
+    clearInterval(_scenePollInterval);
+    _scenePollInterval = null;
+  }
+
   let attempts = 0;
-  const interval = setInterval(() => {
+  _scenePollInterval = setInterval(() => {
     const st = getStory(storyId);
-    if (!st) { clearInterval(interval); return; }
-    const scene = sceneId ? st.scenes.find(s => s.id === sceneId) : st.scenes[st.currentSceneIndex];
-    const url = scene?.imageUrl || st.sceneImageUrl;
+    if (!st) {
+      clearInterval(_scenePollInterval);
+      _scenePollInterval = null;
+      return;
+    }
+    const sc  = sceneId ? st.scenes.find(s => s.id === sceneId) : st.scenes[st.currentSceneIndex];
+    const url = sc?.imageUrl || st.sceneImageUrl;
     if (url) {
-      clearInterval(interval);
+      clearInterval(_scenePollInterval);
+      _scenePollInterval = null;
       activeStory = st;
       renderScene();
+      return;
     }
-    if (++attempts > 30) clearInterval(interval); // give up after ~60s
+    if (++attempts > 30) {
+      // Give up after ~60 s — hide shimmer so UI isn't stuck forever
+      clearInterval(_scenePollInterval);
+      _scenePollInterval = null;
+      document.getElementById('scene-shimmer').classList.add('hidden-shimmer');
+    }
   }, 2000);
 }
 
@@ -1473,12 +1511,17 @@ document.getElementById('regen-scene-btn').addEventListener('click', async () =>
   const scene = activeStory.scenes[activeStory.currentSceneIndex];
   if (!scene) return;
 
+  // Capture scene identity now — currentSceneIndex may change during the await
+  const sceneId = scene.id;
+
   const btn = document.getElementById('regen-scene-btn');
   btn.textContent = '⏳ Generating…';
   btn.disabled = true;
 
-  const shimmer = document.getElementById('scene-shimmer');
   const img     = document.getElementById('scene-img');
+  const shimmer = document.getElementById('scene-shimmer');
+  // Clear tracking so renderScene() treats the incoming URL as a new image
+  img.dataset.displayedUrl = '';
   img.classList.remove('loaded');
   shimmer.classList.remove('hidden-shimmer');
 
@@ -1489,19 +1532,28 @@ document.getElementById('regen-scene-btn').addEventListener('click', async () =>
 
     const st = getStory(activeStory.id);
     if (st) {
-      scene.imageUrl = url;
-      st.scenes[st.currentSceneIndex] = scene;
-      st.sceneImageUrl = url;
-      saveStory(st);
-      activeStory = st;
+      // Look up the scene by ID rather than by currentSceneIndex, which may have
+      // changed if the DM advanced the scene while the image was generating.
+      const targetScene = st.scenes.find(s => s.id === sceneId);
+      if (targetScene) {
+        targetScene.imageUrl = url;
+        // Only mirror to story-level sceneImageUrl if this scene is still current
+        if (st.scenes[st.currentSceneIndex]?.id === sceneId) {
+          st.sceneImageUrl = url;
+        }
+        saveStory(st);
+        activeStory = st;
+      }
     }
     renderScene();
     showToast('New scene image generated!', 'success');
   } catch (err) {
     showToast('Image generation failed.', 'error');
+    // Restore shimmer-hidden state so UI doesn't stay broken
+    img.dataset.displayedUrl = '';
     shimmer.classList.add('hidden-shimmer');
   } finally {
-    btn.textContent = '🎲 Regenerate Image';
+    btn.textContent = '🎲 Regenerate';
     btn.disabled = false;
   }
 });

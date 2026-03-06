@@ -59,17 +59,26 @@ export function buildDMSystemPrompt(story, characters) {
 
   // ── Compact NPC quick-reference — split by location ────────
   // Full NPC sheets available via get_npc_details.
-  const knownNPCs = getNPCsForStory(story.id);
-  const sceneNpcIds = new Set(currentScene?.npcs || []);
+  const knownNPCs   = getNPCsForStory(story.id);
+  const sceneNpcIds = new Set(currentScene?.npcs     || []);
+  const deadNpcIds  = new Set(currentScene?.deadNpcs || []);
   const sceneNPCs   = knownNPCs.filter(npc => sceneNpcIds.has(npc.id));
-  const absentNPCs  = knownNPCs.filter(npc => !sceneNpcIds.has(npc.id));
+  const fallenNPCs  = [...deadNpcIds].map(id => getCharacter(id)).filter(Boolean);
+  // Absent = known to the story but not alive in the current scene and not dead here
+  const absentNPCs  = knownNPCs.filter(npc => !sceneNpcIds.has(npc.id) && !deadNpcIds.has(npc.id));
 
-  const npcQuickRef = knownNPCs.length > 0
+  const npcQuickRef = (knownNPCs.length > 0 || fallenNPCs.length > 0)
     ? (sceneNPCs.length > 0
         ? `\n\n== CHARACTERS IN CURRENT SCENE (quick ref — use get_npc_details for full info) ==\n` +
           sceneNPCs.map(npc => {
             const condStr = npc.conditions?.length ? ` | Cond: ${npc.conditions.join(', ')}` : '';
             return `• ${npc.name} | ID: ${npc.id} | ${npc.npcRole || npc.class} | ${npc.race} | HP: ${npc.stats.hp}/${npc.stats.maxHp}${condStr}`;
+          }).join('\n')
+        : '')
+      + (fallenNPCs.length > 0
+        ? `\n\n== FALLEN IN THIS SCENE (dead — body present, can be looted) ==\n` +
+          fallenNPCs.map(npc => {
+            return `• ☠ ${npc.name} | ID: ${npc.id} | ${npc.npcRole || npc.class} | ${npc.race} | HP: 0/${npc.stats.maxHp} (Dead)`;
           }).join('\n')
         : '')
       + (absentNPCs.length > 0
@@ -158,7 +167,16 @@ EXAMPLE — fetching context:
 • Any skill check or saving throw           → roll_dice
 • Any damage roll (after a hit)             → roll_dice (e.g. "2d6+2")
 • NPC / creature takes damage               → modify_hp on that NPC's ID
-• New named NPC appears for the first time  → introduce_npc
+• New named NPC/enemy appears              → introduce_npc
+  — Unique characters (ally/merchant/neutral/boss): introduce ONCE per story.
+    If already in CHARACTERS IN CURRENT SCENE or KNOWN CHARACTERS, use their
+    existing ID directly — DO NOT call introduce_npc again.
+  — Generic enemies/creatures (enemy/creature): call once PER INSTANCE.
+    Three goblins = three introduce_npc calls, each gets its own npcId.
+• NPC/enemy is killed (HP reaches 0)       → modify_hp automatically moves them to FALLEN.
+  Their body stays visible in context for looting. No extra tool call needed — just narrate the death.
+• Player loots a fallen enemy               → add_item (create_item first if the loot is new)
+• NPC leaves the scene alive (flees, departs, exits) → remove_npc_from_scene
 • NPC says ANYTHING out loud               → npc_speak (NEVER write NPC speech in narration)
 • Party moves to a new location / scene     → advance_scene
 • End of a significant encounter            → log_event for each character
@@ -260,6 +278,19 @@ NPC / WORLD CHARACTER:
 - introduce_npc:
   {"tool":"introduce_npc","storyId":"${story.id}","name":"<name>","role":"enemy|merchant|ally|neutral|boss|creature","race":"<race>","personality":"<1-2 sentences>","appearance":"<1-2 sentences>","hp":<number>,"ac":<number>}
   → Returns npcId. Use in npc_speak immediately after.
+  ⚠️ UNIQUE characters (role=ally/merchant/neutral/boss): ONLY call once per story.
+     If the character is already in CHARACTERS IN CURRENT SCENE or KNOWN CHARACTERS,
+     skip this tool and use npc_speak with their existing ID directly.
+  ✓ GENERIC ENEMIES/CREATURES (role=enemy/creature): You MAY call this multiple times
+     to create separate instances — e.g. call it 3 times for 3 Goblins, 2 times for
+     2 Zombies. Each call creates a distinct combatant with its own HP/ID.
+
+- remove_npc_from_scene:
+  {"tool":"remove_npc_from_scene","storyId":"${story.id}","npcId":"<id>"}
+  {"tool":"remove_npc_from_scene","storyId":"${story.id}","npcName":"<name>"}
+  Removes an NPC from the current scene when they leave or flee while still alive.
+  They remain a known character and can return in a future scene.
+  ⚠️ Do NOT call this for NPCs who die — death is handled automatically by modify_hp.
 
 - npc_speak:
   {"tool":"npc_speak","npcId":"<id>","speech":"What they say…"}
@@ -370,7 +401,11 @@ ${toolDocs}
 3. React meaningfully to every player action. Choices have real consequences.
 4. NEVER invent dice rolls. Call roll_dice and narrate from the real result.
 5. Build tension gradually. Not every action needs combat.
-6. Every named NPC/creature is a WORLD CHARACTER. Call introduce_npc the first time they appear. Use npc_speak for ALL dialogue — never write NPC lines in narration.
+6. Every named NPC/creature is a WORLD CHARACTER with a lifecycle:
+   • INTRODUCTION: Call introduce_npc the first time they appear. Generic enemies (role=enemy/creature) get one introduce_npc call per individual — three skeletons = three calls. Unique named characters (ally/merchant/neutral/boss) are introduced once per story; use their existing ID for all future appearances.
+   • DEATH: When modify_hp brings an NPC to 0 HP they are automatically moved to FALLEN IN THIS SCENE. Their body remains present — players can loot it (use add_item for the character receiving the loot). Just narrate the death; no extra tool call needed.
+   • DEPARTURE: When a living NPC leaves the scene (flees, exits, is dismissed), call remove_npc_from_scene. They stay known and can return later.
+   • DIALOGUE: Use npc_speak for ALL spoken lines — never write NPC dialogue in narration prose.
 7. ALWAYS use modify_hp for any damage or healing — for both PCs and NPCs.
 8. ALWAYS use add_item when a character picks up, receives, or loots any item. Use create_item first if the item is new.
 8b. ALWAYS use use_spell_slot when a character casts a levelled spell. Check the quick-ref for available slots first — if 0 remain, the character CANNOT cast that spell level and must use a different level or choose a cantrip.
@@ -464,6 +499,12 @@ function buildToolCallStatusMessage(toolCalls) {
       }
       case 'introduce_npc':
         return `🎭 Introducing ${tc.name}`;
+      case 'remove_npc_from_scene': {
+        const name = tc.npcName
+          || (tc.npcId ? getCharacter(tc.npcId)?.name : null)
+          || 'NPC';
+        return `🚪 ${name} leaves the scene`;
+      }
       case 'npc_speak': {
         const name = tc.npcName
           || (tc.npcId ? getCharacter(tc.npcId)?.name : null)

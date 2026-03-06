@@ -214,11 +214,33 @@ export const DM_TOOLS = {
   modify_hp(params) {
     const char = db.updateCharacterHP(params.characterId, params.delta);
     if (!char) return { error: 'Character not found' };
+
+    const isDead = char.stats.hp <= 0;
+
+    // When an NPC/enemy dies, move them from scene.npcs[] to scene.deadNpcs[].
+    // They stay in deadNpcs so the DM retains context for looting, death narration,
+    // and any post-combat interactions with the body.
+    if (isDead && char.isNPC) {
+      const allStories = db.getAllStories();
+      for (const story of allStories) {
+        const currentScene = story.scenes[story.currentSceneIndex];
+        if (currentScene?.npcs?.includes(char.id)) {
+          currentScene.npcs = currentScene.npcs.filter(id => id !== char.id);
+          if (!currentScene.deadNpcs) currentScene.deadNpcs = [];
+          if (!currentScene.deadNpcs.includes(char.id)) {
+            currentScene.deadNpcs.push(char.id);
+          }
+          db.saveStory(story);
+          break;
+        }
+      }
+    }
+
     return {
       newHp:  char.stats.hp,
       maxHp:  char.stats.maxHp,
       delta:  params.delta,
-      isDead: char.stats.hp <= 0,
+      isDead,
       reason: params.reason || '',
     };
   },
@@ -371,9 +393,13 @@ export const DM_TOOLS = {
   // ─── NPC / World Character tools ───────────────────────────
 
   /**
-   * Introduce a new world character (NPC, enemy, merchant, creature…).
+   * Introduce a world character (NPC, enemy, merchant, creature…).
    * Call this the FIRST time a named character appears. They are then
    * remembered across all sessions via the characters table.
+   *
+   * If an NPC with the same name already exists in this story, that existing
+   * character is reused (no duplicate created) and added to the current scene.
+   *
    * Returns npcId — use it in npc_speak in your next turn.
    */
   async introduce_npc(params) {
@@ -382,6 +408,44 @@ export const DM_TOOLS = {
       personality = '', appearance = '',
       hp = 10, ac = 10,
     } = params;
+
+    // ── Deduplication guard ──────────────────────────────────────
+    // Unique named characters (ally, merchant, neutral, boss) are deduplicated by name:
+    // calling introduce_npc for an already-known character just re-adds them to the scene.
+    //
+    // Generic enemies/creatures (role = 'enemy' | 'creature') intentionally allow
+    // multiple instances with the same name — e.g. three Goblins, two Zombies, etc.
+    const UNIQUE_NPC_ROLES = ['ally', 'merchant', 'neutral', 'boss'];
+    const isUniqueRole = UNIQUE_NPC_ROLES.includes(role);
+
+    if (storyId && isUniqueRole) {
+      const existingNPCs = db.getNPCsForStory(storyId);
+      const duplicate = existingNPCs.find(
+        n => n.name.trim().toLowerCase() === name.trim().toLowerCase()
+      );
+      if (duplicate) {
+        // Make sure they're registered in the current scene
+        const story = db.getStory(storyId);
+        if (story) {
+          const currentScene = story.scenes[story.currentSceneIndex];
+          if (currentScene) {
+            if (!currentScene.npcs) currentScene.npcs = [];
+            if (!currentScene.npcs.includes(duplicate.id)) {
+              currentScene.npcs.push(duplicate.id);
+            }
+            duplicate.lastSceneId = currentScene.id;
+            db.saveStory(story);
+            db.saveCharacter(duplicate);
+          }
+        }
+        return {
+          npcId: duplicate.id,
+          npc:   duplicate,
+          reused: true,
+          note:  `Existing character "${duplicate.name}" (ID: ${duplicate.id}) reused — no duplicate created.`,
+        };
+      }
+    }
 
     const backstory = await geminiGenerate(
       `Write a 2-3 sentence backstory for a DND NPC. Name: ${name}. Role: ${role}. Race: ${race}. Personality: ${personality || 'mysterious'}. Appearance: ${appearance || 'unremarkable'}. Be evocative. Return only the backstory text, no labels or formatting.`
@@ -440,6 +504,37 @@ export const DM_TOOLS = {
     generateNPCPortraitAsync(npc.id, portraitPrompt);
 
     return { npcId: npc.id, npc };
+  },
+
+  /**
+   * Remove an NPC from the current scene without killing them.
+   * Use this when an NPC leaves, flees, or departs while still alive.
+   * They remain a known character in the story and can reappear later.
+   * Accepts npcId OR npcName, plus storyId.
+   */
+  remove_npc_from_scene(params) {
+    const npc = params.npcId
+      ? db.getCharacter(params.npcId)
+      : db.getNPCByName(params.npcName || '');
+    if (!npc || !npc.isNPC) return { error: 'NPC not found' };
+
+    const story = db.getStory(params.storyId);
+    if (!story) return { error: 'Story not found' };
+
+    const currentScene = story.scenes[story.currentSceneIndex];
+    if (!currentScene) return { error: 'No current scene' };
+
+    if (!currentScene.npcs) currentScene.npcs = [];
+    const wasInScene = currentScene.npcs.includes(npc.id);
+    currentScene.npcs = currentScene.npcs.filter(id => id !== npc.id);
+    db.saveStory(story);
+
+    return {
+      success: true,
+      npcId:   npc.id,
+      npcName: npc.name,
+      wasInScene,
+    };
   },
 
   /**
@@ -790,7 +885,11 @@ export function formatToolResultsForRePrompt(toolResults) {
       case 'create_item':
         return `✅ create_item: Item "${result.item?.name}" created. itemId="${result.itemId}" — use this exact ID in your next add_item call`;
       case 'introduce_npc':
-        return `✅ introduce_npc: NPC "${result.npc?.name}" created. npcId="${result.npcId}" — use this ID in npc_speak calls`;
+        return result.reused
+          ? `✅ introduce_npc: Existing character "${result.npc?.name}" reused (no duplicate). npcId="${result.npcId}" — use this ID in npc_speak calls`
+          : `✅ introduce_npc: NPC "${result.npc?.name}" created. npcId="${result.npcId}" — use this ID in npc_speak calls`;
+      case 'remove_npc_from_scene':
+        return `✅ remove_npc_from_scene: "${result.npcName}" removed from current scene (still a known character for future scenes)`;
       case 'modify_hp':
         return `✅ modify_hp: HP updated → ${result.newHp}/${result.maxHp}${result.isDead ? ' — CHARACTER IS DOWN (0 HP)' : ''}`;
       case 'modify_gold':
@@ -1006,7 +1105,11 @@ export function toolResultSummary(tool, params, result) {
     case 'log_event':
       return `📜 Adventure log updated`;
     case 'introduce_npc':
-      return `🎭 ${result.npc?.name || params.name} enters the story`;
+      return result.reused
+        ? `🎭 ${result.npc?.name || params.name} returns to the scene`
+        : `🎭 ${result.npc?.name || params.name} enters the story`;
+    case 'remove_npc_from_scene':
+      return `🚪 ${result.npcName || params.npcName || 'NPC'} leaves the scene`;
     case 'npc_speak':
       return ''; // NPC speech renders as its own bubble
     case 'compress_history':

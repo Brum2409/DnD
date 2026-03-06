@@ -2,7 +2,7 @@
  * GET /api/auth/me
  * Returns the current authenticated user + their settings.
  * Returns 401 if not authenticated.
- * Returns: { user: { id, email, username }, settings: { gemini_api_key, gemini_model, image_model, hf_api_key } }
+ * Returns: { user: { id, email, username }, settings: { gemini_api_key, gemini_model, image_model, hf_api_key, dm_response_length, dm_tone, dm_pacing, dm_extra_instructions, dm_system_prompt_override } }
  */
 
 import { verifyAuth, sendError } from '../_lib/auth.js';
@@ -33,7 +33,7 @@ export default async function handler(req, res) {
     if (users.length === 0) return sendError(res, 401, 'User not found');
 
     const { rows: settings } = await query(
-      'SELECT gemini_api_key, gemini_model, image_model, hf_api_key FROM user_settings WHERE user_id = $1',
+      'SELECT gemini_api_key, gemini_model, image_model, hf_api_key, dm_response_length, dm_tone, dm_pacing, dm_extra_instructions, dm_system_prompt_override FROM user_settings WHERE user_id = $1',
       [userId]
     );
 
@@ -42,6 +42,11 @@ export default async function handler(req, res) {
       gemini_model: 'gemini-3.1-flash-lite-preview',
       image_model: 'pollinations',
       hf_api_key: '',
+      dm_response_length: '',
+      dm_tone: '',
+      dm_pacing: '',
+      dm_extra_instructions: '',
+      dm_system_prompt_override: '',
     };
 
     return res.status(200).json({

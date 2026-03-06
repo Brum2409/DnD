@@ -217,13 +217,19 @@ export const DM_TOOLS = {
 
     const isDead = char.stats.hp <= 0;
 
-    // When an NPC/enemy dies, automatically remove them from whichever scene they're in.
+    // When an NPC/enemy dies, move them from scene.npcs[] to scene.deadNpcs[].
+    // They stay in deadNpcs so the DM retains context for looting, death narration,
+    // and any post-combat interactions with the body.
     if (isDead && char.isNPC) {
       const allStories = db.getAllStories();
       for (const story of allStories) {
         const currentScene = story.scenes[story.currentSceneIndex];
         if (currentScene?.npcs?.includes(char.id)) {
           currentScene.npcs = currentScene.npcs.filter(id => id !== char.id);
+          if (!currentScene.deadNpcs) currentScene.deadNpcs = [];
+          if (!currentScene.deadNpcs.includes(char.id)) {
+            currentScene.deadNpcs.push(char.id);
+          }
           db.saveStory(story);
           break;
         }

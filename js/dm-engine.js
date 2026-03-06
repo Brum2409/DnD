@@ -59,17 +59,26 @@ export function buildDMSystemPrompt(story, characters) {
 
   // ── Compact NPC quick-reference — split by location ────────
   // Full NPC sheets available via get_npc_details.
-  const knownNPCs = getNPCsForStory(story.id);
-  const sceneNpcIds = new Set(currentScene?.npcs || []);
+  const knownNPCs   = getNPCsForStory(story.id);
+  const sceneNpcIds = new Set(currentScene?.npcs     || []);
+  const deadNpcIds  = new Set(currentScene?.deadNpcs || []);
   const sceneNPCs   = knownNPCs.filter(npc => sceneNpcIds.has(npc.id));
-  const absentNPCs  = knownNPCs.filter(npc => !sceneNpcIds.has(npc.id));
+  const fallenNPCs  = [...deadNpcIds].map(id => getCharacter(id)).filter(Boolean);
+  // Absent = known to the story but not alive in the current scene and not dead here
+  const absentNPCs  = knownNPCs.filter(npc => !sceneNpcIds.has(npc.id) && !deadNpcIds.has(npc.id));
 
-  const npcQuickRef = knownNPCs.length > 0
+  const npcQuickRef = (knownNPCs.length > 0 || fallenNPCs.length > 0)
     ? (sceneNPCs.length > 0
         ? `\n\n== CHARACTERS IN CURRENT SCENE (quick ref — use get_npc_details for full info) ==\n` +
           sceneNPCs.map(npc => {
             const condStr = npc.conditions?.length ? ` | Cond: ${npc.conditions.join(', ')}` : '';
             return `• ${npc.name} | ID: ${npc.id} | ${npc.npcRole || npc.class} | ${npc.race} | HP: ${npc.stats.hp}/${npc.stats.maxHp}${condStr}`;
+          }).join('\n')
+        : '')
+      + (fallenNPCs.length > 0
+        ? `\n\n== FALLEN IN THIS SCENE (dead — body present, can be looted) ==\n` +
+          fallenNPCs.map(npc => {
+            return `• ☠ ${npc.name} | ID: ${npc.id} | ${npc.npcRole || npc.class} | ${npc.race} | HP: 0/${npc.stats.maxHp} (Dead)`;
           }).join('\n')
         : '')
       + (absentNPCs.length > 0
@@ -164,8 +173,9 @@ EXAMPLE — fetching context:
     existing ID directly — DO NOT call introduce_npc again.
   — Generic enemies/creatures (enemy/creature): call once PER INSTANCE.
     Three goblins = three introduce_npc calls, each gets its own npcId.
-• NPC/enemy is killed (HP reaches 0)       → modify_hp handles scene removal automatically.
-  No extra tool call needed — just narrate the death.
+• NPC/enemy is killed (HP reaches 0)       → modify_hp automatically moves them to FALLEN.
+  Their body stays visible in context for looting. No extra tool call needed — just narrate the death.
+• Player loots a fallen enemy               → add_item (create_item first if the loot is new)
 • NPC leaves the scene alive (flees, departs, exits) → remove_npc_from_scene
 • NPC says ANYTHING out loud               → npc_speak (NEVER write NPC speech in narration)
 • Party moves to a new location / scene     → advance_scene
@@ -393,7 +403,7 @@ ${toolDocs}
 5. Build tension gradually. Not every action needs combat.
 6. Every named NPC/creature is a WORLD CHARACTER with a lifecycle:
    • INTRODUCTION: Call introduce_npc the first time they appear. Generic enemies (role=enemy/creature) get one introduce_npc call per individual — three skeletons = three calls. Unique named characters (ally/merchant/neutral/boss) are introduced once per story; use their existing ID for all future appearances.
-   • DEATH: When modify_hp brings an NPC to 0 HP they are automatically removed from the scene. Just narrate the death — no extra tool call needed.
+   • DEATH: When modify_hp brings an NPC to 0 HP they are automatically moved to FALLEN IN THIS SCENE. Their body remains present — players can loot it (use add_item for the character receiving the loot). Just narrate the death; no extra tool call needed.
    • DEPARTURE: When a living NPC leaves the scene (flees, exits, is dismissed), call remove_npc_from_scene. They stay known and can return later.
    • DIALOGUE: Use npc_speak for ALL spoken lines — never write NPC dialogue in narration prose.
 7. ALWAYS use modify_hp for any damage or healing — for both PCs and NPCs.

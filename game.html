@@ -560,11 +560,11 @@
 
     /* ── Mobile: bottom drawer for char panel ── */
     @media (max-width: 700px) {
-      /* Scene takes up more vertical space on mobile */
+      /* Scene area on mobile */
       .scene-area {
-        flex: 0 0 38%;
-        min-height: 180px;
-        max-height: 280px;
+        flex: 0 0 28%;
+        min-height: 150px;
+        max-height: 220px;
       }
 
       .scene-title { font-size: clamp(0.95rem, 4vw, 1.2rem); }
@@ -657,7 +657,7 @@
 
     /* Smaller phones */
     @media (max-width: 420px) {
-      .scene-area { flex: 0 0 35%; min-height: 160px; max-height: 240px; }
+      .scene-area { flex: 0 0 25%; min-height: 130px; max-height: 180px; }
       .scene-title { font-size: 0.95rem; }
       .scene-shimmer::after { font-size: 1.1rem; letter-spacing: 0.5rem; }
       .char-mini-portrait { width: 44px; height: 44px; font-size: 1.1rem; }

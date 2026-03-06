@@ -182,7 +182,7 @@ async function _generateHFImage(prompt, width, height, modelId) {
  * @returns {Promise<string>}  base64 data URL ("data:image/jpeg;base64,...")
  */
 export async function generateIconBase64(prompt, size = 128) {
-  const fullPrompt = `${prompt}, game item icon, fantasy art, dark background, detailed illustration`;
+  const fullPrompt = `${prompt}, game item icon, fantasy art, dark background, detailed illustration, centered composition, full subject visible and centered`;
   const result     = await generateImage(fullPrompt, size, size);
 
   // Imagen returns a data URL directly — no extra fetch needed
@@ -223,7 +223,7 @@ export function buildIconPrompt(item) {
     legendary: 'ancient, golden aura, radiating power, mythic, intricate engravings',
   }[item.rarity] || 'detailed, fantasy';
 
-  return `${item.name}, DND fantasy ${item.type}, RPG game icon, isolated on dark background, ${rarityStyle}, pixel-art-inspired detailed illustration`;
+  return `${item.name}, DND fantasy ${item.type}, RPG game icon, isolated on dark background, ${rarityStyle}, pixel-art-inspired detailed illustration, full item visible and centered`;
 }
 
 // ── Portrait generation ───────────────────────────────────────
@@ -235,7 +235,7 @@ export function buildIconPrompt(item) {
  * @returns {Promise<string>}
  */
 export async function generatePortrait(character) {
-  const prompt = `Portrait of ${character.name}, ${character.race} ${character.class}, DND fantasy character, dramatic lighting, detailed face, oil painting style, dark background`;
+  const prompt = `Portrait of ${character.name}, ${character.race} ${character.class}, DND fantasy character, dramatic lighting, detailed face, oil painting style, dark background, subject centered`;
   return generateImage(prompt, 512, 512);
 }
 

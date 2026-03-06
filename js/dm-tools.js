@@ -349,7 +349,7 @@ export const DM_TOOLS = {
       `Write a 2-sentence fantasy lore backstory for a DND item named "${params.name}". ${params.description || ''}. Be evocative and mysterious. Just the lore text, no labels.`
     ).catch(() => '');
 
-    const iconPrompt = `${params.name}, ${params.type || 'misc'}, fantasy RPG item icon, ${params.rarity || 'common'} rarity, dark background, detailed art`;
+    const iconPrompt = `${params.name}, ${params.type || 'misc'}, fantasy RPG item icon, ${params.rarity || 'common'} rarity, dark background, detailed art, full item visible and centered`;
     const iconBase64 = await generateIconBase64(iconPrompt).catch(() => '');
 
     const item = {
@@ -436,7 +436,7 @@ export const DM_TOOLS = {
       }
     }
 
-    const portraitPrompt = `${name}, ${race} ${role}, DND fantasy character portrait, ${appearance || 'dramatic lighting'}, detailed face, dark fantasy art, circular portrait`;
+    const portraitPrompt = `${name}, ${race} ${role}, DND fantasy character portrait, ${appearance || 'dramatic lighting'}, detailed face, dark fantasy art, circular portrait, subject centered`;
     generateNPCPortraitAsync(npc.id, portraitPrompt);
 
     return { npcId: npc.id, npc };
@@ -478,7 +478,7 @@ export const DM_TOOLS = {
       `Write a 2-sentence flavour lore for a DND 5e ${levelName} named "${params.name}" (${params.school || 'Evocation'} school). ${params.description || ''}. Be evocative and mysterious. Return only the lore text, no labels.`
     ).catch(() => '');
 
-    const iconPrompt = `${params.name}, ${params.school || 'magic'} spell, DND 5e ${levelName}, glowing magical effect, fantasy art icon, dark background, detailed`;
+    const iconPrompt = `${params.name}, ${params.school || 'magic'} spell, DND 5e ${levelName}, glowing magical effect, fantasy art icon, dark background, detailed, centered composition`;
     const iconBase64 = await generateIconBase64(iconPrompt).catch(() => '');
 
     const spell = {

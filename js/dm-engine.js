@@ -159,6 +159,9 @@ EXAMPLE — fetching context:
 • Any damage roll (after a hit)             → roll_dice (e.g. "2d6+2")
 • NPC / creature takes damage               → modify_hp on that NPC's ID
 • New named NPC appears for the first time  → introduce_npc
+  ⚠️ ALREADY-KNOWN NPC? If the NPC is listed in CHARACTERS IN CURRENT SCENE or
+     KNOWN CHARACTERS above, use their existing ID — DO NOT call introduce_npc again.
+     Call npc_speak with their existing npcId directly.
 • NPC says ANYTHING out loud               → npc_speak (NEVER write NPC speech in narration)
 • Party moves to a new location / scene     → advance_scene
 • End of a significant encounter            → log_event for each character
@@ -260,6 +263,11 @@ NPC / WORLD CHARACTER:
 - introduce_npc:
   {"tool":"introduce_npc","storyId":"${story.id}","name":"<name>","role":"enemy|merchant|ally|neutral|boss|creature","race":"<race>","personality":"<1-2 sentences>","appearance":"<1-2 sentences>","hp":<number>,"ac":<number>}
   → Returns npcId. Use in npc_speak immediately after.
+  ⚠️ ONLY call this for characters NOT already listed in the quick-reference sections above.
+     If the character is already in CHARACTERS IN CURRENT SCENE or KNOWN CHARACTERS,
+     skip this tool and use npc_speak with their existing ID directly.
+     (The tool will safely reuse the existing character if you call it for a known NPC, but
+      it is always better to use the existing ID directly to avoid unnecessary work.)
 
 - npc_speak:
   {"tool":"npc_speak","npcId":"<id>","speech":"What they say…"}
@@ -370,7 +378,7 @@ ${toolDocs}
 3. React meaningfully to every player action. Choices have real consequences.
 4. NEVER invent dice rolls. Call roll_dice and narrate from the real result.
 5. Build tension gradually. Not every action needs combat.
-6. Every named NPC/creature is a WORLD CHARACTER. Call introduce_npc the first time they appear. Use npc_speak for ALL dialogue — never write NPC lines in narration.
+6. Every named NPC/creature is a WORLD CHARACTER. Call introduce_npc the FIRST time they appear. For ANY subsequent appearance — whether they return to the current scene or enter a new one — use their existing npcId from the quick-reference above. NEVER call introduce_npc for a character already listed in CHARACTERS IN CURRENT SCENE or KNOWN CHARACTERS. Use npc_speak for ALL dialogue — never write NPC lines in narration.
 7. ALWAYS use modify_hp for any damage or healing — for both PCs and NPCs.
 8. ALWAYS use add_item when a character picks up, receives, or loots any item. Use create_item first if the item is new.
 8b. ALWAYS use use_spell_slot when a character casts a levelled spell. Check the quick-ref for available slots first — if 0 remain, the character CANNOT cast that spell level and must use a different level or choose a cantrip.

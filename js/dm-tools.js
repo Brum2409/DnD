@@ -371,9 +371,13 @@ export const DM_TOOLS = {
   // ─── NPC / World Character tools ───────────────────────────
 
   /**
-   * Introduce a new world character (NPC, enemy, merchant, creature…).
+   * Introduce a world character (NPC, enemy, merchant, creature…).
    * Call this the FIRST time a named character appears. They are then
    * remembered across all sessions via the characters table.
+   *
+   * If an NPC with the same name already exists in this story, that existing
+   * character is reused (no duplicate created) and added to the current scene.
+   *
    * Returns npcId — use it in npc_speak in your next turn.
    */
   async introduce_npc(params) {
@@ -382,6 +386,38 @@ export const DM_TOOLS = {
       personality = '', appearance = '',
       hp = 10, ac = 10,
     } = params;
+
+    // ── Deduplication guard ──────────────────────────────────────
+    // If this NPC already exists in the story (matched by name, case-insensitive),
+    // reuse them instead of creating a duplicate character.
+    if (storyId) {
+      const existingNPCs = db.getNPCsForStory(storyId);
+      const duplicate = existingNPCs.find(
+        n => n.name.trim().toLowerCase() === name.trim().toLowerCase()
+      );
+      if (duplicate) {
+        // Make sure they're registered in the current scene
+        const story = db.getStory(storyId);
+        if (story) {
+          const currentScene = story.scenes[story.currentSceneIndex];
+          if (currentScene) {
+            if (!currentScene.npcs) currentScene.npcs = [];
+            if (!currentScene.npcs.includes(duplicate.id)) {
+              currentScene.npcs.push(duplicate.id);
+            }
+            duplicate.lastSceneId = currentScene.id;
+            db.saveStory(story);
+            db.saveCharacter(duplicate);
+          }
+        }
+        return {
+          npcId: duplicate.id,
+          npc:   duplicate,
+          reused: true,
+          note:  `Existing character "${duplicate.name}" (ID: ${duplicate.id}) reused — no duplicate created.`,
+        };
+      }
+    }
 
     const backstory = await geminiGenerate(
       `Write a 2-3 sentence backstory for a DND NPC. Name: ${name}. Role: ${role}. Race: ${race}. Personality: ${personality || 'mysterious'}. Appearance: ${appearance || 'unremarkable'}. Be evocative. Return only the backstory text, no labels or formatting.`
@@ -790,7 +826,9 @@ export function formatToolResultsForRePrompt(toolResults) {
       case 'create_item':
         return `✅ create_item: Item "${result.item?.name}" created. itemId="${result.itemId}" — use this exact ID in your next add_item call`;
       case 'introduce_npc':
-        return `✅ introduce_npc: NPC "${result.npc?.name}" created. npcId="${result.npcId}" — use this ID in npc_speak calls`;
+        return result.reused
+          ? `✅ introduce_npc: Existing character "${result.npc?.name}" reused (no duplicate). npcId="${result.npcId}" — use this ID in npc_speak calls`
+          : `✅ introduce_npc: NPC "${result.npc?.name}" created. npcId="${result.npcId}" — use this ID in npc_speak calls`;
       case 'modify_hp':
         return `✅ modify_hp: HP updated → ${result.newHp}/${result.maxHp}${result.isDead ? ' — CHARACTER IS DOWN (0 HP)' : ''}`;
       case 'modify_gold':

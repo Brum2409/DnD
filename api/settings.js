@@ -8,7 +8,11 @@
 import { verifyAuth, sendError } from './_lib/auth.js';
 import { ensureSchema, query } from './_lib/db.js';
 
-const ALLOWED_FIELDS = ['gemini_api_key', 'gemini_model', 'image_model', 'hf_api_key'];
+const ALLOWED_FIELDS = [
+  'gemini_api_key', 'gemini_model', 'image_model', 'hf_api_key',
+  'dm_response_length', 'dm_tone', 'dm_pacing',
+  'dm_extra_instructions', 'dm_system_prompt_override',
+];
 
 export default async function handler(req, res) {
   let userId;
@@ -23,7 +27,10 @@ export default async function handler(req, res) {
 
     if (req.method === 'GET') {
       const { rows } = await query(
-        'SELECT gemini_api_key, gemini_model, image_model, hf_api_key FROM user_settings WHERE user_id = $1',
+        `SELECT gemini_api_key, gemini_model, image_model, hf_api_key,
+                dm_response_length, dm_tone, dm_pacing,
+                dm_extra_instructions, dm_system_prompt_override
+         FROM user_settings WHERE user_id = $1`,
         [userId]
       );
       return res.status(200).json(rows[0] || {
@@ -31,6 +38,11 @@ export default async function handler(req, res) {
         gemini_model: 'gemini-3.1-flash-lite-preview',
         image_model: 'pollinations',
         hf_api_key: '',
+        dm_response_length: 'balanced',
+        dm_tone: 'dark_fantasy',
+        dm_pacing: 'medium',
+        dm_extra_instructions: '',
+        dm_system_prompt_override: '',
       });
     }
 

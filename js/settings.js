@@ -14,6 +14,13 @@ let _settings = {
   gemini_model: 'gemini-3.1-flash-lite-preview',
   image_model: 'pollinations',
   hf_api_key: '',
+  // DM style
+  dm_response_length: 'balanced',
+  dm_tone: 'dark_fantasy',
+  dm_pacing: 'medium',
+  // Expert
+  dm_extra_instructions: '',
+  dm_system_prompt_override: '',
 };
 
 /**

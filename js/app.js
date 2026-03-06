@@ -17,6 +17,7 @@ import {
 } from './db.js';
 import { showToast } from './utils.js';
 import { getCurrentUser, logout } from './auth.js';
+import { getSettings, saveSettings } from './settings.js';
 
 // ── Public entry point ────────────────────────────────────────
 
@@ -216,6 +217,81 @@ function injectSettingsModal() {
 
         <hr class="divider" />
 
+        <!-- DM Style -->
+        <div style="margin-bottom:1.5rem;">
+          <h3 style="font-size:0.95rem;color:var(--color-primary);margin-bottom:1rem;font-family:var(--font-display);">
+            🎭 DM Style
+          </h3>
+          <div style="display:grid;gap:1rem;">
+            <div class="form-group" style="margin:0;">
+              <label for="dm-length-select">Response Length</label>
+              <select id="dm-length-select" style="width:100%;background:var(--color-surface-2);border:1px solid var(--color-border);border-radius:var(--radius);color:var(--color-text);font-family:var(--font-ui);font-size:0.88rem;padding:0.55rem 0.75rem;cursor:pointer;">
+                <option value="short">Short — punchy, 1 paragraph</option>
+                <option value="balanced">Balanced — 2–4 paragraphs (default)</option>
+                <option value="detailed">Detailed — 3–5 paragraphs, rich description</option>
+                <option value="epic">Epic — no limit, full immersive prose</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin:0;">
+              <label for="dm-tone-select">Tone</label>
+              <select id="dm-tone-select" style="width:100%;background:var(--color-surface-2);border:1px solid var(--color-border);border-radius:var(--radius);color:var(--color-text);font-family:var(--font-ui);font-size:0.88rem;padding:0.55rem 0.75rem;cursor:pointer;">
+                <option value="gritty">Gritty — harsh realism, morally grey</option>
+                <option value="dark_fantasy">Dark Fantasy — dread &amp; wonder (default)</option>
+                <option value="heroic">Heroic — legends in the making, triumphant</option>
+                <option value="whimsical">Whimsical — lighthearted, humor &amp; heart</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin:0;">
+              <label for="dm-pacing-select">Pacing</label>
+              <select id="dm-pacing-select" style="width:100%;background:var(--color-surface-2);border:1px solid var(--color-border);border-radius:var(--radius);color:var(--color-text);font-family:var(--font-ui);font-size:0.88rem;padding:0.55rem 0.75rem;cursor:pointer;">
+                <option value="fast">Fast — skip transitions, get to the action</option>
+                <option value="medium">Medium — natural rhythm (default)</option>
+                <option value="slow">Slow — scenes breathe, quiet character moments</option>
+              </select>
+            </div>
+          </div>
+          <div style="margin-top:1rem;">
+            <button class="btn btn-primary btn-sm" id="save-dm-style-btn">💾 Save DM Style</button>
+            <div id="dm-style-status" style="margin-top:0.75rem;font-family:var(--font-ui);font-size:0.8rem;"></div>
+          </div>
+        </div>
+
+        <hr class="divider" />
+
+        <!-- Expert Settings -->
+        <details id="expert-settings-details" style="margin-bottom:1.5rem;">
+          <summary style="cursor:pointer;font-size:0.95rem;color:var(--color-primary);font-family:var(--font-display);list-style:none;display:flex;align-items:center;gap:0.5rem;user-select:none;">
+            <span id="expert-arrow" style="display:inline-block;transition:transform 0.2s;">▶</span>
+            ⚙️ Expert Settings
+          </summary>
+          <div style="margin-top:1.25rem;display:grid;gap:1.25rem;">
+            <div class="form-group" style="margin:0;">
+              <label for="dm-extra-input">Extra DM Instructions</label>
+              <textarea id="dm-extra-input" rows="5"
+                placeholder="Add any extra rules or style notes here. These are appended to the master prompt and take effect immediately…"
+                style="width:100%;box-sizing:border-box;background:var(--color-surface-2);border:1px solid var(--color-border);border-radius:var(--radius);color:var(--color-text);font-family:var(--font-ui);font-size:0.85rem;padding:0.6rem 0.75rem;resize:vertical;min-height:100px;line-height:1.5;"></textarea>
+              <div class="form-hint">Appended to the system prompt as a "Custom DM Instructions" section.</div>
+            </div>
+            <div class="form-group" style="margin:0;">
+              <label for="dm-override-input" style="display:flex;align-items:center;gap:0.5rem;">
+                Full System Prompt Override
+                <span style="font-size:0.7rem;background:rgba(220,60,60,0.15);color:#e06060;border:1px solid rgba(220,60,60,0.3);border-radius:4px;padding:0.1em 0.4em;">EXPERT</span>
+              </label>
+              <textarea id="dm-override-input" rows="10"
+                placeholder="If set, this completely replaces the entire DM system prompt. Leave empty to use the default prompt. Changes take effect on the next message…"
+                style="width:100%;box-sizing:border-box;background:var(--color-surface-2);border:1px solid rgba(220,60,60,0.3);border-radius:var(--radius);color:var(--color-text);font-family:var(--font-mono, monospace);font-size:0.8rem;padding:0.6rem 0.75rem;resize:vertical;min-height:160px;line-height:1.5;"></textarea>
+              <div class="form-hint" style="color:rgba(220,120,120,0.8);">⚠️ Overrides ALL DM rules, tone, and style settings above. The DM will only follow the instructions in this box.</div>
+            </div>
+            <div>
+              <button class="btn btn-primary btn-sm" id="save-expert-btn">💾 Save Expert Settings</button>
+              <button class="btn btn-ghost btn-sm" id="reset-expert-btn" style="margin-left:0.5rem;">↩ Reset to Default</button>
+              <div id="expert-status" style="margin-top:0.75rem;font-family:var(--font-ui);font-size:0.8rem;"></div>
+            </div>
+          </div>
+        </details>
+
+        <hr class="divider" />
+
         <!-- Data management -->
         <div>
           <h3 style="font-size:0.95rem;color:var(--color-primary);margin-bottom:1rem;font-family:var(--font-display);">
@@ -284,11 +360,18 @@ function initSettingsModal() {
   const hfKeyInput = document.getElementById('hf-key-input');
 
   const open = () => {
+    const s = getSettings();
     if (apiInput)   apiInput.value   = getGeminiKey();
     if (hfKeyInput) hfKeyInput.value = getHFKey();
     // Sync model selectors to current values
     if (modelSelect)      modelSelect.value      = getGeminiModel();
     if (imageModelSelect) imageModelSelect.value = getImageModel();
+    // Sync DM style controls
+    if (dmLengthSelect)  dmLengthSelect.value  = s.dm_response_length || 'balanced';
+    if (dmToneSelect)    dmToneSelect.value    = s.dm_tone            || 'dark_fantasy';
+    if (dmPacingSelect)  dmPacingSelect.value  = s.dm_pacing          || 'medium';
+    if (dmExtraInput)    dmExtraInput.value    = s.dm_extra_instructions    || '';
+    if (dmOverrideInput) dmOverrideInput.value = s.dm_system_prompt_override || '';
     refreshStorageInfo();
     modal.classList.remove('hidden');
     apiInput?.focus();
@@ -376,6 +459,52 @@ function initSettingsModal() {
     const status = document.getElementById('image-model-status');
     if (status) status.innerHTML = `<span style="color:var(--color-success)">✓ Image model set to ${modelDef?.label || selected}</span>`;
     showToast('Image model saved!', 'success');
+  });
+
+  // DM Style controls
+  const dmLengthSelect  = document.getElementById('dm-length-select');
+  const dmToneSelect    = document.getElementById('dm-tone-select');
+  const dmPacingSelect  = document.getElementById('dm-pacing-select');
+  const dmExtraInput    = document.getElementById('dm-extra-input');
+  const dmOverrideInput = document.getElementById('dm-override-input');
+
+  // Toggle arrow on expert details open/close
+  document.getElementById('expert-settings-details')?.addEventListener('toggle', e => {
+    const arrow = document.getElementById('expert-arrow');
+    if (arrow) arrow.style.transform = e.target.open ? 'rotate(90deg)' : '';
+  });
+
+  document.getElementById('save-dm-style-btn')?.addEventListener('click', async () => {
+    const patch = {
+      dm_response_length: dmLengthSelect?.value || 'balanced',
+      dm_tone:            dmToneSelect?.value   || 'dark_fantasy',
+      dm_pacing:          dmPacingSelect?.value || 'medium',
+    };
+    await saveSettings(patch);
+    const status = document.getElementById('dm-style-status');
+    if (status) status.innerHTML = '<span style="color:var(--color-success)">✓ DM style saved</span>';
+    showToast('DM style saved!', 'success');
+  });
+
+  document.getElementById('save-expert-btn')?.addEventListener('click', async () => {
+    const patch = {
+      dm_extra_instructions:    dmExtraInput?.value    || '',
+      dm_system_prompt_override: dmOverrideInput?.value || '',
+    };
+    await saveSettings(patch);
+    const status = document.getElementById('expert-status');
+    if (status) status.innerHTML = '<span style="color:var(--color-success)">✓ Expert settings saved</span>';
+    showToast('Expert settings saved!', 'success');
+  });
+
+  document.getElementById('reset-expert-btn')?.addEventListener('click', async () => {
+    if (!confirm('Reset Extra Instructions and System Prompt Override to empty?')) return;
+    if (dmExtraInput)    dmExtraInput.value    = '';
+    if (dmOverrideInput) dmOverrideInput.value = '';
+    await saveSettings({ dm_extra_instructions: '', dm_system_prompt_override: '' });
+    const status = document.getElementById('expert-status');
+    if (status) status.innerHTML = '<span style="color:var(--color-success)">✓ Reset to defaults</span>';
+    showToast('Expert settings reset.', 'info');
   });
 
   document.getElementById('export-btn')?.addEventListener('click', () => {

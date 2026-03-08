@@ -57,7 +57,16 @@ export function buildDMSystemPrompt(story, characters) {
     const deathSaveStr = ch.deathSaves
       ? ` | DEATH SAVES: ${ch.deathSaves.successes}✓/${ch.deathSaves.failures}✗ — call roll_death_save each round!`
       : '';
-    return `• ${ch.name} | ID: ${ch.id} | ${ch.race} ${ch.class} Lv${ch.level} | HP: ${ch.stats.hp}/${ch.stats.maxHp} | AC: ${ch.stats.ac} | Gold: ${ch.gold}gp | XP: ${ch.xp} | Prof: +${profBonus}${slotStr}${condStr}${deathSaveStr}`;
+    const concStr = ch.activeConcentration
+      ? ` | 🔮 Conc: ${ch.activeConcentration.spellName}`
+      : '';
+    const inspirStr = ch.inspiration ? ' | ✦ INSPIRED' : '';
+    const hitDieClass = (ch.class || '').toLowerCase();
+    const hitDieMap = { barbarian:12, fighter:10, paladin:10, ranger:10, rogue:8, bard:8, cleric:8, druid:8, monk:8, warlock:8, wizard:6, sorcerer:6 };
+    const hitDie  = hitDieMap[hitDieClass] ?? 8;
+    const hdAvail = (ch.level || 1) - (ch.hitDiceUsed || 0);
+    const hdStr   = ` | HD: ${hdAvail}/${ch.level || 1}d${hitDie}`;
+    return `• ${ch.name} | ID: ${ch.id} | ${ch.race} ${ch.class} Lv${ch.level} | HP: ${ch.stats.hp}/${ch.stats.maxHp} | AC: ${ch.stats.ac} | Gold: ${ch.gold}gp | XP: ${ch.xp} | Prof: +${profBonus}${slotStr}${hdStr}${condStr}${deathSaveStr}${concStr}${inspirStr}`;
   }).join('\n');
 
   // ── Compact NPC quick-reference — split by location ────────
@@ -100,6 +109,21 @@ export function buildDMSystemPrompt(story, characters) {
         const objStr = q.objectives.map((o, i) => `  ${i}. [${o.done ? '✓' : ' '}] ${o.text}`).join('\n');
         return `• "${q.title}" (questId="${q.id}")${q.giver ? ` — given by ${q.giver}` : ''}${q.reward ? ` | Reward: ${q.reward}` : ''}\n${objStr}`;
       }).join('\n')
+    : '';
+
+  // ── Combat state ───────────────────────────────────────────
+  const combatState = story.combat?.active
+    ? `\n\n== ACTIVE COMBAT — ROUND ${story.combat.round} ==\n` +
+      `Initiative order (▶ = current turn):\n` +
+      story.combat.participants.map((p, i) => {
+        const isCurrent = i === story.combat.turnIndex;
+        const char      = p.id ? getCharacter(p.id) : null;
+        const hpStr     = char ? ` | HP: ${char.stats.hp}/${char.stats.maxHp}` : '';
+        const condStr   = char?.conditions?.length ? ` | ${char.conditions.join(', ')}` : '';
+        const concStr   = char?.activeConcentration ? ` | Conc: ${char.activeConcentration.spellName}` : '';
+        return `${isCurrent ? '▶' : ' '} ${i + 1}. ${p.name} [Init: ${p.initiative}]${hpStr}${condStr}${concStr}`;
+      }).join('\n') +
+      `\nUse next_turn to advance when the current combatant's turn ends. Use end_combat when the fight is over.`
     : '';
 
   // ── Tool documentation ─────────────────────────────────────
@@ -174,6 +198,17 @@ EXAMPLE — fetching context:
 • Player heals (potion, spell, rest)        → modify_hp with POSITIVE delta
 • PC drops to 0 HP (needsDeathSaves=true)  → roll_death_save at the START of each of their turns
 • PC is unconscious and takes damage        → roll_death_save with result treated as one automatic failure
+• Combat breaks out (enemies & PCs face off) → start_combat (list ALL combatants)
+• A combatant's turn ends in combat         → next_turn to advance initiative
+• Combat is over (enemies dead/fled)        → end_combat
+• Character casts a CONCENTRATION spell     → use_spell_slot with concentration=true
+• Concentrating character takes damage      → check_concentration with damage amount
+• Character willingly ends concentration   → drop_concentration
+• Short rest (recovery, 1+ hour downtime)  → short_rest for each resting PC
+• Long rest (full night's sleep)            → long_rest for each resting PC
+  ⚠️ long_rest also restores spell slots — do NOT call restore_spell_slots separately
+• Player shows exceptional roleplay/bravery → give_inspiration (reward them!)
+• Player declares they use Inspiration      → use_inspiration before their roll
 • NPC gives the party a clear task/mission  → create_quest with specific objectives
 • Party completes a quest objective         → update_quest_objective (mark done: true)
 • Quest is fully resolved (success/failure) → complete_quest, then award XP/gold
@@ -336,6 +371,51 @@ SCENE IMAGE:
   fire, destroyed environment, new powerful presence, shift in time of day, etc.
   This does NOT advance the scene — use advance_scene when you move to a new location.
 
+COMBAT:
+- start_combat:
+  {"tool":"start_combat","storyId":"${story.id}","participants":[{"id":"<charId>","name":"<name>","isNPC":false},...]}
+  Rolls initiative (1d20+DEX) for each participant and sets turn order.
+  → Call at the START of any combat encounter. Include all PCs and named enemies.
+
+- end_combat:   {"tool":"end_combat","storyId":"${story.id}"}
+  Clears combat state. Call when all enemies are dead/fled or combat otherwise ends.
+
+- next_turn:    {"tool":"next_turn","storyId":"${story.id}"}
+  Advances to the next combatant. Auto-increments round when all have gone.
+  Call at the END of each combatant's turn (after narrating their actions).
+
+RESTS:
+- short_rest:
+  {"tool":"short_rest","characterId":"<id>","diceToSpend":<number>}
+  Spends hit dice to recover HP (each die: 1d[hitDie]+CON mod, min 1 HP per die).
+  Warlocks also recover Pact Magic slots on a short rest.
+
+- long_rest:
+  {"tool":"long_rest","characterId":"<id>"}
+  Fully restores HP, all spell slots, and half total hit dice (rounded up).
+  Clears concentration and rest-clearing conditions.
+  ⚠️ Call this for EACH party member separately after a full night's rest.
+
+CONCENTRATION:
+- check_concentration:
+  {"tool":"check_concentration","characterId":"<id>","damage":<damage-taken>}
+  Must be called when a concentrating character takes damage.
+  DC = max(10, damage/2). Rolls CON save. Failure drops concentration.
+
+- drop_concentration:
+  {"tool":"drop_concentration","characterId":"<id>"}
+  Voluntarily ends a concentration spell. Call when the character chooses to stop.
+
+INSPIRATION:
+- give_inspiration:
+  {"tool":"give_inspiration","characterId":"<id>","reason":"<why>"}
+  Awards Inspiration for outstanding roleplay. Per 5e: only one at a time.
+
+- use_inspiration:
+  {"tool":"use_inspiration","characterId":"<id>"}
+  Expends Inspiration so the character can roll with advantage on any d20.
+  Returns hadInspiration=false if they didn't have any.
+
 QUEST JOURNAL:
 - create_quest:
   {"tool":"create_quest","storyId":"${story.id}","title":"<title>","description":"<1-2 sentences>","giver":"<NPC name or empty>","objectives":["Objective 1","Objective 2"],"reward":"<gold/item/other or empty>"}
@@ -442,7 +522,7 @@ ${currentScene ? `Title: ${currentScene.title}\n${currentScene.description}` : '
 
 == PARTY QUICK REFERENCE ==
 ${charQuickRef || 'No characters assigned yet.'}
-(Use get_full_character for full stats, backstory, and inventory.)${npcQuickRef}${questQuickRef}
+(Use get_full_character for full stats, backstory, and inventory.)${npcQuickRef}${questQuickRef}${combatState}
 
 ${toolDocs}
 
@@ -471,7 +551,11 @@ ${lengthRule}
 15. Use get_full_character or get_npc_details when you need backstory, inventory, or ability scores to make a meaningful narrative decision.
 16. Proactively call compress_history when the conversation gets very long (> 40 messages) to keep your context sharp. The 8 most recent messages are always preserved verbatim — compression only removes older messages.
 17. YOU control the world. Player messages are declarations of INTENT, never declarations of OUTCOME. Always use dice for anything uncertain, and always narrate the actual result — even if it contradicts what the player expected.
-18. QUESTS: When an NPC gives the party a mission or a clear goal emerges, call create_quest with specific, achievable objectives. Track progress with update_quest_objective as goals are accomplished. Close quests with complete_quest before awarding XP or gold rewards.${pacingRule}
+18. QUESTS: When an NPC gives the party a mission or a clear goal emerges, call create_quest with specific, achievable objectives. Track progress with update_quest_objective as goals are accomplished. Close quests with complete_quest before awarding XP or gold rewards.
+19. COMBAT TRACKER: Use start_combat at the start of every combat encounter. Call next_turn at the end of each combatant's turn. Call end_combat when the fight is resolved. This gives players a clear sense of initiative order and round count.
+20. CONCENTRATION: When use_spell_slot has concentration=true, the old concentration (if any) is dropped automatically. When a concentrating character takes damage, ALWAYS call check_concentration with the damage amount. The CON saving throw result tells you whether they maintain the spell.
+21. RESTS: When PCs rest, call short_rest or long_rest for each character. long_rest fully restores HP, spell slots, and hit dice — do NOT call restore_spell_slots separately after a long rest.
+22. INSPIRATION: Reward players with give_inspiration for exceptional roleplay, clever tactics, or memorable moments. When a player announces they use Inspiration before a roll, call use_inspiration first, then roll the d20 twice and take the higher result.${pacingRule}
 
 == TONE ==
 ${toneText}${extraSection}`;
@@ -622,6 +706,36 @@ function buildToolCallStatusMessage(toolCalls) {
       }
       case 'compress_history':
         return `📜 Compressing history`;
+      case 'start_combat':
+        return `⚔️ Starting combat — rolling initiative`;
+      case 'end_combat':
+        return `✅ Combat ended`;
+      case 'next_turn':
+        return `⏭️ Next turn`;
+      case 'check_concentration': {
+        const ch = getCharacter(tc.characterId);
+        return `🔮 Checking concentration for ${ch?.name || 'character'}`;
+      }
+      case 'drop_concentration': {
+        const ch = getCharacter(tc.characterId);
+        return `🔮 ${ch?.name || 'Character'} drops concentration`;
+      }
+      case 'short_rest': {
+        const ch = getCharacter(tc.characterId);
+        return `💤 ${ch?.name || 'Character'} takes a short rest`;
+      }
+      case 'long_rest': {
+        const ch = getCharacter(tc.characterId);
+        return `🌙 ${ch?.name || 'Character'} takes a long rest`;
+      }
+      case 'give_inspiration': {
+        const ch = getCharacter(tc.characterId);
+        return `✦ Awarding Inspiration to ${ch?.name || 'character'}`;
+      }
+      case 'use_inspiration': {
+        const ch = getCharacter(tc.characterId);
+        return `✦ ${ch?.name || 'Character'} uses Inspiration`;
+      }
       default:
         return null;
     }

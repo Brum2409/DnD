@@ -24,13 +24,25 @@
  *          create_item, set_npc_stat
  *  NPC     introduce_npc, npc_speak
  *  QUEST   create_quest, update_quest_objective, complete_quest, get_quests
+ *  COMBAT  start_combat, end_combat, next_turn
+ *  REST    short_rest, long_rest
+ *  MAGIC+  check_concentration, drop_concentration (extend use_spell_slot)
+ *  INSPI   give_inspiration, use_inspiration
  *  META    compress_history
  */
 
 import * as db from './db.js';
 import { geminiGenerate } from './api-gemini.js';
 import { generateIconBase64 } from './api-image.js';
-import { uuid, getBaseSpellSlots } from './utils.js';
+import { uuid, getBaseSpellSlots, getModifier } from './utils.js';
+
+// ── Hit die by class (5e) ──────────────────────────────────────
+const HIT_DICE = {
+  barbarian: 12,
+  fighter: 10, paladin: 10, ranger: 10,
+  rogue: 8, bard: 8, cleric: 8, druid: 8, monk: 8, warlock: 8,
+  wizard: 6, sorcerer: 6,
+};
 
 // ── NPC portrait generator (async, updates NPC after creation) ─
 
@@ -735,17 +747,35 @@ export const DM_TOOLS = {
   /**
    * Expend one spell slot of the given level.
    * Call this whenever a character casts a levelled spell (NOT cantrips — they're free).
+   * If concentration=true, any existing concentration spell is dropped automatically.
    */
   use_spell_slot(params) {
     const result = db.useSpellSlot(params.characterId, Number(params.slotLevel));
     if (!result.ok) return { error: result.error };
     const char = db.getCharacter(params.characterId);
+    if (!char) return { error: 'Character not found' };
+
+    let droppedConcentration = null;
+    if (params.concentration) {
+      if (char.activeConcentration) {
+        droppedConcentration = char.activeConcentration.spellName;
+      }
+      char.activeConcentration = {
+        spellName:  params.spellName || 'Unknown spell',
+        slotLevel:  Number(params.slotLevel),
+        startedAt:  Date.now(),
+      };
+      db.saveCharacter(char);
+    }
+
     return {
-      success:    true,
-      slotLevel:  params.slotLevel,
-      remaining:  result.remaining,
-      charName:   char?.name || params.characterId,
-      spellName:  params.spellName || '',
+      success:              true,
+      slotLevel:            params.slotLevel,
+      remaining:            result.remaining,
+      charName:             char.name,
+      spellName:            params.spellName || '',
+      concentration:        Boolean(params.concentration),
+      droppedConcentration,
     };
   },
 
@@ -1020,6 +1050,269 @@ ${transcript.slice(0, 10000)}`,
     if (!story) return { error: 'Story not found' };
     return { quests: story.quests || [] };
   },
+
+  // ─── COMBAT tools ──────────────────────────────────────────
+
+  /**
+   * Begin structured combat. Rolls initiative for all participants
+   * (d20 + DEX modifier) and sets story.combat.active = true.
+   * participants: [{ id: characterId|npcId, name: string, isNPC: bool }]
+   */
+  start_combat(params) {
+    const story = db.getStory(params.storyId);
+    if (!story) return { error: 'Story not found' };
+
+    const defs = params.participants || [];
+    if (!defs.length) return { error: 'No participants provided' };
+
+    const rolled = defs.map(p => {
+      const char = p.id ? db.getCharacter(p.id) : null;
+      const dexMod = char ? getModifier(char.stats?.dexterity ?? 10) : 0;
+      const roll = Math.floor(Math.random() * 20) + 1;
+      return {
+        id:         p.id || '',
+        name:       char?.name || p.name || 'Unknown',
+        isNPC:      Boolean(p.isNPC ?? char?.isNPC),
+        initiative: roll + dexMod,
+        roll,
+        dexMod,
+      };
+    });
+
+    // Sort descending; PCs before NPCs on ties
+    rolled.sort((a, b) => {
+      if (b.initiative !== a.initiative) return b.initiative - a.initiative;
+      if (a.isNPC !== b.isNPC) return a.isNPC ? 1 : -1;
+      return Math.random() - 0.5;
+    });
+
+    story.combat = {
+      active:       true,
+      round:        1,
+      turnIndex:    0,
+      participants: rolled,
+      startedAt:    Date.now(),
+    };
+    db.saveStory(story);
+
+    return {
+      combat: story.combat,
+      order:  rolled.map((p, i) =>
+        `${i + 1}. ${p.name} — Initiative ${p.initiative} (d20[${p.roll}]${p.dexMod >= 0 ? '+' : ''}${p.dexMod})`),
+    };
+  },
+
+  /** End combat and clear the combat state. */
+  end_combat(params) {
+    const story = db.getStory(params.storyId);
+    if (!story) return { error: 'Story not found' };
+    story.combat = { active: false, round: 0, turnIndex: 0, participants: [] };
+    db.saveStory(story);
+    return { success: true };
+  },
+
+  /**
+   * Advance to the next combatant's turn.
+   * Automatically increments round when all participants have gone.
+   */
+  next_turn(params) {
+    const story = db.getStory(params.storyId);
+    if (!story) return { error: 'Story not found' };
+    if (!story.combat?.active) return { error: 'No active combat' };
+
+    const combat = story.combat;
+    combat.turnIndex = (combat.turnIndex + 1) % combat.participants.length;
+    if (combat.turnIndex === 0) combat.round++;
+    db.saveStory(story);
+
+    const current = combat.participants[combat.turnIndex];
+    const char = current.id ? db.getCharacter(current.id) : null;
+    return {
+      round:              combat.round,
+      turnIndex:          combat.turnIndex,
+      currentParticipant: {
+        ...current,
+        hp:         char?.stats?.hp,
+        maxHp:      char?.stats?.maxHp,
+        conditions: char?.conditions || [],
+      },
+    };
+  },
+
+  // ─── CONCENTRATION tools ────────────────────────────────────
+
+  /**
+   * Roll a Constitution saving throw to maintain concentration after damage.
+   * DC = max(10, half damage taken). On failure, concentration is dropped.
+   */
+  check_concentration(params) {
+    const char = db.getCharacter(params.characterId);
+    if (!char) return { error: 'Character not found' };
+    if (!char.activeConcentration) return { error: `${char.name} is not concentrating` };
+
+    const dc     = Math.max(10, Math.floor((params.damage || 0) / 2));
+    const conMod = getModifier(char.stats?.constitution ?? 10);
+    const roll   = Math.floor(Math.random() * 20) + 1;
+    const total  = roll + conMod;
+    const success = total >= dc;
+
+    let lost = null;
+    if (!success) {
+      lost = char.activeConcentration.spellName;
+      char.activeConcentration = null;
+      db.saveCharacter(char);
+    }
+
+    return {
+      charName: char.name,
+      roll, conMod, total, dc, success,
+      maintaining:       success ? char.activeConcentration?.spellName : null,
+      lostConcentration: lost,
+    };
+  },
+
+  /** Voluntarily drop a concentration spell. */
+  drop_concentration(params) {
+    const char = db.getCharacter(params.characterId);
+    if (!char) return { error: 'Character not found' };
+    const dropped = char.activeConcentration?.spellName || null;
+    char.activeConcentration = null;
+    db.saveCharacter(char);
+    return { success: true, dropped, charName: char.name };
+  },
+
+  // ─── REST tools ─────────────────────────────────────────────
+
+  /**
+   * Short rest: spend hit dice to recover HP.
+   * diceToSpend: how many hit dice to roll (capped at available).
+   * Each die: 1d[hitDie] + CON modifier, minimum 1 HP per die.
+   */
+  short_rest(params) {
+    const char = db.getCharacter(params.characterId);
+    if (!char) return { error: 'Character not found' };
+    if (char.isNPC) return { error: 'Short rest is only for player characters' };
+    if ((char.stats.hp || 0) <= 0) return { error: 'Cannot rest while at 0 HP — stabilise first' };
+
+    const hitDie   = HIT_DICE[(char.class || '').toLowerCase()] ?? 8;
+    const level    = char.level || 1;
+    const used     = char.hitDiceUsed || 0;
+    const avail    = level - used;
+
+    if (avail <= 0) {
+      return { error: `No hit dice remaining (used all ${level}). Take a long rest to recover them.` };
+    }
+
+    const toSpend = Math.min(Math.max(1, params.diceToSpend || 1), avail);
+    const conMod  = getModifier(char.stats?.constitution ?? 10);
+
+    let healed = 0;
+    const rolls = [];
+    for (let i = 0; i < toSpend; i++) {
+      const r = Math.floor(Math.random() * hitDie) + 1;
+      rolls.push(r);
+      healed += Math.max(1, r + conMod);
+    }
+
+    const prevHp       = char.stats.hp;
+    char.stats.hp      = Math.min(char.stats.maxHp, prevHp + healed);
+    char.hitDiceUsed   = used + toSpend;
+    db.saveCharacter(char);
+
+    // Warlocks also recover pact magic slots on a short rest
+    if ((char.class || '').toLowerCase() === 'warlock') {
+      db.restoreSpellSlots(char.id, 'short');
+    }
+
+    return {
+      charName:      char.name,
+      hitDie:        `d${hitDie}`,
+      diceSpent:     toSpend,
+      diceAvailable: avail - toSpend,
+      rolls,
+      conMod,
+      healed:        char.stats.hp - prevHp,
+      newHp:         char.stats.hp,
+      maxHp:         char.stats.maxHp,
+    };
+  },
+
+  /**
+   * Long rest: restore HP to max, recover all spell slots,
+   * restore half total hit dice (rounded up), clear resting conditions.
+   */
+  long_rest(params) {
+    const char = db.getCharacter(params.characterId);
+    if (!char) return { error: 'Character not found' };
+    if (char.isNPC) return { error: 'Long rest is only for player characters' };
+
+    const prevHp = char.stats.hp;
+    char.stats.hp = char.stats.maxHp;
+
+    // Restore half total hit dice (rounded up)
+    const level    = char.level || 1;
+    const prevUsed = char.hitDiceUsed || 0;
+    const restored = Math.ceil(level / 2);
+    char.hitDiceUsed = Math.max(0, prevUsed - restored);
+
+    // Drop concentration
+    const droppedConc = char.activeConcentration?.spellName || null;
+    char.activeConcentration = null;
+
+    // Clear conditions restored by a full rest
+    const REST_CLEARS = ['Unconscious', 'Stable', 'Prone', 'Incapacitated', 'Exhaustion'];
+    char.conditions = char.conditions.filter(c => !REST_CLEARS.includes(c));
+
+    db.saveCharacter(char);
+    db.restoreSpellSlots(char.id, 'long');
+
+    const updated = db.getCharacter(char.id);
+    const slotSummary = updated?.spellSlots
+      ? Object.entries(updated.spellSlots)
+          .map(([lvl, s]) => `L${lvl}:${s.total - s.used}/${s.total}`)
+          .join(' ')
+      : 'none';
+
+    return {
+      charName:         char.name,
+      hpRestored:       char.stats.maxHp - prevHp,
+      newHp:            char.stats.maxHp,
+      hitDiceRestored:  restored,
+      hitDiceAvailable: level - char.hitDiceUsed,
+      spellSlots:       slotSummary,
+      droppedConcentration: droppedConc,
+    };
+  },
+
+  // ─── INSPIRATION tools ──────────────────────────────────────
+
+  /**
+   * Award Inspiration to a player character for great roleplay.
+   * Per 5e rules, a character can only hold one Inspiration at a time.
+   */
+  give_inspiration(params) {
+    const char = db.getCharacter(params.characterId);
+    if (!char) return { error: 'Character not found' };
+    if (char.isNPC) return { error: 'Inspiration is only for player characters' };
+    char.inspiration = true;
+    db.saveCharacter(char);
+    return { charName: char.name, reason: params.reason || '', hasInspiration: true };
+  },
+
+  /**
+   * Expend a character's Inspiration for advantage on a d20 roll.
+   * Returns whether they had Inspiration to use.
+   */
+  use_inspiration(params) {
+    const char = db.getCharacter(params.characterId);
+    if (!char) return { error: 'Character not found' };
+    if (!char.inspiration) {
+      return { charName: char.name, hadInspiration: false, error: `${char.name} does not have Inspiration` };
+    }
+    char.inspiration = false;
+    db.saveCharacter(char);
+    return { charName: char.name, hadInspiration: true, used: true };
+  },
 };
 
 // ── Agentic re-prompt formatter ───────────────────────────────
@@ -1053,8 +1346,12 @@ export function formatToolResultsForRePrompt(toolResults) {
         return `✅ give_spell: ${result.charName} learned "${result.spellName}"`;
       case 'remove_spell':
         return `✅ remove_spell: "${result.spellName}" removed from known spells`;
-      case 'use_spell_slot':
-        return `✅ use_spell_slot: Level-${result.slotLevel} slot expended${result.spellName ? ` for ${result.spellName}` : ''} — ${result.remaining} remaining for ${result.charName}`;
+      case 'use_spell_slot': {
+        let slotMsg = `✅ use_spell_slot: Level-${result.slotLevel} slot expended${result.spellName ? ` for ${result.spellName}` : ''} — ${result.remaining} remaining for ${result.charName}`;
+        if (result.concentration) slotMsg += ` — CONCENTRATING on ${result.spellName}`;
+        if (result.droppedConcentration) slotMsg += ` (dropped ${result.droppedConcentration})`;
+        return slotMsg;
+      }
       case 'restore_spell_slots':
         return `✅ restore_spell_slots: ${result.charName} recovers slots (${result.restType} rest) — ${result.slots}`;
       case 'get_spell_slots': {
@@ -1141,6 +1438,34 @@ export function formatToolResultsForRePrompt(toolResults) {
         const done   = quests.filter(q => q.status !== 'active').length;
         return `ℹ️ Quests — Active: ${active || 'none'} | Completed/Failed: ${done}`;
       }
+      case 'start_combat': {
+        const order = (result.order || []).join(' | ');
+        return `⚔️ start_combat: Combat begins! Initiative order: ${order}`;
+      }
+      case 'end_combat':
+        return `✅ end_combat: Combat ended.`;
+      case 'next_turn': {
+        const p = result.currentParticipant;
+        return `⏭️ next_turn: Round ${result.round} — ${p?.name || '?'}'s turn (Initiative: ${p?.initiative})${p?.hp !== undefined ? ` | HP: ${p.hp}/${p.maxHp}` : ''}`;
+      }
+      case 'check_concentration': {
+        if (result.success) return `✅ check_concentration(${result.charName}): rolled ${result.roll}+${result.conMod}=${result.total} vs DC ${result.dc} — SUCCESS, maintaining ${result.maintaining}`;
+        return `❌ check_concentration(${result.charName}): rolled ${result.roll}+${result.conMod}=${result.total} vs DC ${result.dc} — FAILED, concentration on ${result.lostConcentration} broken`;
+      }
+      case 'drop_concentration':
+        return `✅ drop_concentration(${result.charName}): ${result.dropped ? `Dropped ${result.dropped}` : 'Not concentrating'}`;
+      case 'short_rest': {
+        const rollStr = (result.rolls || []).join(', ');
+        return `✅ short_rest(${result.charName}): Spent ${result.diceSpent}×${result.hitDie}+${result.conMod} [${rollStr}] → healed ${result.healed} HP (now ${result.newHp}/${result.maxHp}) | Hit dice left: ${result.diceAvailable}`;
+      }
+      case 'long_rest':
+        return `✅ long_rest(${result.charName}): Full rest — HP ${result.newHp}/${result.newHp} | Spell slots: ${result.spellSlots} | Hit dice restored: ${result.hitDiceRestored} (${result.hitDiceAvailable} available)`;
+      case 'give_inspiration':
+        return `✅ give_inspiration(${result.charName}): Inspiration awarded${result.reason ? ` — ${result.reason}` : ''}`;
+      case 'use_inspiration':
+        return result.hadInspiration
+          ? `✅ use_inspiration(${result.charName}): Inspiration used — roll with advantage!`
+          : `❌ use_inspiration(${result.charName}): No Inspiration to use`;
       default:
         return `✅ ${tool}: ${JSON.stringify(result).slice(0, 120)}`;
     }
@@ -1307,8 +1632,12 @@ export function toolResultSummary(tool, params, result) {
       return `📖 ${result.charName} learns: ${result.spellName}`;
     case 'remove_spell':
       return `📖 Spell forgotten: ${result.spellName}`;
-    case 'use_spell_slot':
-      return `✨ ${result.charName} casts${result.spellName ? ` ${result.spellName}` : ''} (L${result.slotLevel} slot — ${result.remaining} left)`;
+    case 'use_spell_slot': {
+      let castMsg = `✨ ${result.charName} casts${result.spellName ? ` ${result.spellName}` : ''} (L${result.slotLevel} slot — ${result.remaining} left)`;
+      if (result.concentration) castMsg += ` 🔮 Concentrating`;
+      if (result.droppedConcentration) castMsg += ` (ended ${result.droppedConcentration})`;
+      return castMsg;
+    }
     case 'restore_spell_slots':
       return `🌙 ${result.charName} recovers spell slots`;
     case 'get_spell_slots':
@@ -1335,6 +1664,32 @@ export function toolResultSummary(tool, params, result) {
       return `📋 Quest ${result.status}: ${result.questTitle || params.questId}`;
     case 'get_quests':
       return '';
+    case 'start_combat': {
+      const first = result.combat?.participants?.[0];
+      return `⚔️ Combat begins! Round 1 — ${first?.name || '?'} goes first`;
+    }
+    case 'end_combat':
+      return `✅ Combat ended`;
+    case 'next_turn': {
+      const p = result.currentParticipant;
+      return `⏭️ Round ${result.round} — ${p?.name || '?'}'s turn`;
+    }
+    case 'check_concentration':
+      return result.success
+        ? `🔮 ${result.charName} maintains concentration (rolled ${result.total} vs DC ${result.dc})`
+        : `💔 ${result.charName} loses concentration on ${result.lostConcentration}! (rolled ${result.total} vs DC ${result.dc})`;
+    case 'drop_concentration':
+      return result.dropped
+        ? `🔮 ${result.charName} drops concentration on ${result.dropped}`
+        : '';
+    case 'short_rest':
+      return `💤 ${result.charName} short rests — heals ${result.healed} HP (now ${result.newHp}/${result.maxHp})`;
+    case 'long_rest':
+      return `🌙 ${result.charName} takes a long rest — fully restored`;
+    case 'give_inspiration':
+      return `✦ ${result.charName} gains Inspiration!${result.reason ? ' — ' + result.reason : ''}`;
+    case 'use_inspiration':
+      return result.hadInspiration ? `✦ ${result.charName} uses Inspiration for advantage!` : '';
     // Read tools produce no visible badge — they're internal DM actions
     case 'get_character_stats':
     case 'get_full_character':

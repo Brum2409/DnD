@@ -114,9 +114,11 @@ export function buildDMSystemPrompt(story, characters) {
       const condStr  = char?.conditions?.length ? ` | Cond: ${char.conditions.join(', ')}` : '';
       const alive    = e.isAlive ? '' : ' ☠ DEAD/OUT';
       const isCurr   = i === combat.currentTurnIndex;
+      // Show full economy for the active combatant; show reaction for everyone
+      // (reactions can fire on any turn — OA, Shield, Counterspell, etc.)
       const economy  = isCurr
         ? ` | ACT:${e.hasAction ? '✓' : '✗'} BON:${e.hasBonusAction ? '✓' : '✗'} REA:${e.hasReaction ? '✓' : '✗'}${e.hasExtraAction ? ' +ACT:✓' : ''} MOV:${e.movementRemaining}ft`
-        : '';
+        : ` | REA:${e.hasReaction ? '✓' : '✗'}`;
       const marker   = isCurr ? ' ◄ ACTIVE TURN' : '';
       return `  ${i + 1}. Init:${e.initiative} | ${e.name} | ID:${e.characterId} | HP:${hp}/${maxHp} | AC:${ac}${condStr}${economy}${alive}${marker}`;
     }).join('\n');

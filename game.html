@@ -853,6 +853,15 @@
       box-shadow: 0 0 14px rgba(140,90,200,0.2), inset 0 0 8px rgba(90,60,140,0.05);
     }
 
+    /* Downed PC — 0 HP, still rolling death saves */
+    .combatant-card.is-downed {
+      border-color: rgba(220,100,30,0.5);
+      background: rgba(160,60,20,0.08);
+      opacity: 0.75;
+    }
+    .combatant-card.is-downed .combatant-name { color: rgba(230,140,80,0.9); }
+    .combatant-card.is-downed .combatant-init { color: rgba(230,140,80,0.7); }
+
     /* Dead / removed */
     .combatant-card.is-dead {
       opacity: 0.28;
@@ -1657,12 +1666,13 @@ function renderCombatTracker() {
     const conditions = char?.conditions || [];
 
     const isCurrent = i === combat.currentTurnIndex;
-    const isDead    = !entry.isAlive || hp <= 0;
+    const isDead    = !entry.isAlive;           // truly removed from combat
+    const isDowned  = entry.isAlive && hp <= 0 && !entry.isNPC; // PC making death saves
     const isNPC     = entry.isNPC;
 
     // ── Action economy pips (only shown for current combatant) ──
     let actionPips = '';
-    if (isCurrent && !isDead) {
+    if (isCurrent && !isDead && !isDowned) {
       const actCls  = entry.hasAction      ? 'act-avail' : 'act-used';
       const bonCls  = entry.hasBonusAction ? 'bon-avail' : 'bon-used';
       const reaCls  = entry.hasReaction    ? 'rea-avail' : 'rea-used';
@@ -1689,16 +1699,23 @@ function renderCombatTracker() {
         }</div>`
       : '';
 
-    // ── Active turn indicator ──
-    const activeIndicator = isCurrent && !isDead
-      ? `<div class="combatant-active-indicator">▶ Your Turn</div>`
-      : '';
+    // ── Active turn indicator / downed indicator ──
+    let activeIndicator = '';
+    if (isCurrent && !isDead && !isDowned) {
+      activeIndicator = `<div class="combatant-active-indicator">▶ Your Turn</div>`;
+    } else if (isDowned) {
+      const char2 = getCharacter(entry.characterId);
+      const ds = char2?.deathSaves;
+      const dsText = ds ? ` ${ds.successes}✓ ${ds.failures}✗` : '';
+      activeIndicator = `<div class="combatant-active-indicator" style="color:rgba(230,140,80,0.9)">☠ Downed${dsText}</div>`;
+    }
 
     const cardClasses = [
       'combatant-card',
-      isCurrent && !isDead ? 'is-current-turn' : '',
-      isNPC                ? 'is-npc'           : '',
-      isDead               ? 'is-dead'          : '',
+      isCurrent && !isDead && !isDowned ? 'is-current-turn' : '',
+      isNPC                              ? 'is-npc'           : '',
+      isDead                             ? 'is-dead'          : '',
+      isDowned                           ? 'is-downed'        : '',
     ].filter(Boolean).join(' ');
 
     return `
@@ -1708,6 +1725,7 @@ function renderCombatTracker() {
         <div class="combatant-card-top">
           <span class="combatant-init">${entry.initiative}</span>
           <span class="combatant-name">${escHtml(entry.name)}</span>
+          <span class="combatant-hp-text" style="font-size:0.65rem;opacity:0.7;margin-left:auto;">${isDead ? '☠' : `${hp}/${maxHp}`}</span>
         </div>
         <div class="combatant-hp-bar">
           <div class="combatant-hp-fill" style="width:${hpPct}%;background:${hpColor};"></div>

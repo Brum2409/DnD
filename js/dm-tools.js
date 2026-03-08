@@ -243,10 +243,12 @@ export const DM_TOOLS = {
           }
         }
 
-        // Auto-mark the combatant as isAlive=false in the initiative order
+        // Auto-mark the combatant as isAlive=false in the initiative order.
+        // PCs at 0 HP stay isAlive=true — they still need death save turns.
+        // Only NPCs (no death saves) or PCs with 'Dead' condition are truly out.
         if (story.combat?.active) {
           const combatEntry = story.combat.initiativeOrder.find(e => e.characterId === char.id);
-          if (combatEntry && combatEntry.isAlive) {
+          if (combatEntry && combatEntry.isAlive && (char.isNPC || char.conditions?.includes('Dead'))) {
             combatEntry.isAlive = false;
             storyChanged = true;
           }
@@ -290,6 +292,25 @@ export const DM_TOOLS = {
       }
     }
 
+    // Report alive counts when in active combat so the DM knows when to call end_combat.
+    let combatAliveCounts = null;
+    {
+      const allStories = db.getAllStories();
+      for (const story of allStories) {
+        if (story.combat?.active) {
+          const inCombat = story.combat.initiativeOrder.some(e => e.characterId === char.id);
+          if (inCombat) {
+            const alive = story.combat.initiativeOrder.filter(e => e.isAlive);
+            combatAliveCounts = {
+              aliveNPCs: alive.filter(e =>  e.isNPC).length,
+              alivePCs:  alive.filter(e => !e.isNPC).length,
+            };
+            break;
+          }
+        }
+      }
+    }
+
     return {
       newHp:  char.stats.hp,
       maxHp:  char.stats.maxHp,
@@ -297,6 +318,7 @@ export const DM_TOOLS = {
       isDead,
       needsDeathSaves,
       reason: params.reason || '',
+      ...(combatAliveCounts ?? {}),
     };
   },
 
@@ -351,6 +373,18 @@ export const DM_TOOLS = {
         char.conditions.push('Dead');
         char.deathSaves = { successes, failures };
         outcome = 'dead';
+
+        // Mark the PC as out of the initiative order — three failures = truly dead
+        const allStories = db.getAllStories();
+        for (const story of allStories) {
+          if (story.combat?.active) {
+            const combatEntry = story.combat.initiativeOrder.find(e => e.characterId === char.id);
+            if (combatEntry && combatEntry.isAlive) {
+              combatEntry.isAlive = false;
+              db.saveStory(story);
+            }
+          }
+        }
       } else if (successes >= 3) {
         isStable = true;
         char.conditions = char.conditions.filter(c => c !== 'Unconscious');
@@ -1328,7 +1362,12 @@ ${transcript.slice(0, 10000)}`,
     const currentCombatant = story.combat.initiativeOrder[story.combat.currentTurnIndex];
     entry.initiative = Number(params.initiative);
 
-    story.combat.initiativeOrder.sort((a, b) => b.initiative - a.initiative);
+    story.combat.initiativeOrder.sort((a, b) => {
+      if (b.initiative !== a.initiative) return b.initiative - a.initiative;
+      const ca = db.getCharacter(a.characterId);
+      const cb = db.getCharacter(b.characterId);
+      return ((cb?.stats?.dexterity || 10) - (ca?.stats?.dexterity || 10));
+    });
     story.combat.currentTurnIndex = story.combat.initiativeOrder
       .findIndex(e => e.characterId === currentCombatant.characterId);
 
@@ -1511,8 +1550,22 @@ export function formatToolResultsForRePrompt(toolResults) {
           : `✅ introduce_npc: NPC "${result.npc?.name}" created. npcId="${result.npcId}" — use this ID in npc_speak calls`;
       case 'remove_npc_from_scene':
         return `✅ remove_npc_from_scene: "${result.npcName}" removed from current scene (still a known character for future scenes)`;
-      case 'modify_hp':
-        return `✅ modify_hp: HP updated → ${result.newHp}/${result.maxHp}${result.isDead ? ` — PC IS DOWN (0 HP)${result.needsDeathSaves ? ' — DEATH SAVES ACTIVE: call roll_death_save each round until stable or dead' : ''}` : ''}`;
+      case 'modify_hp': {
+        let hpLine = `✅ modify_hp: HP updated → ${result.newHp}/${result.maxHp}`;
+        if (result.isDead && result.needsDeathSaves) {
+          hpLine += ` — PC IS DOWN (0 HP) — DEATH SAVES ACTIVE: call roll_death_save at the START of each of their turns`;
+        }
+        if (result.isDead && !result.needsDeathSaves) {
+          hpLine += ` — NPC/creature DEAD`;
+        }
+        if (result.aliveNPCs !== undefined) {
+          const combatSummary = `${result.aliveNPCs} enemy/NPC(s) and ${result.alivePCs} PC(s) still in initiative`;
+          hpLine += ` | Combat: ${combatSummary}`;
+          if (result.aliveNPCs === 0) hpLine += ` — ALL ENEMIES DOWN → call end_combat`;
+          else if (result.alivePCs === 0) hpLine += ` — ALL PCs DOWN → call end_combat`;
+        }
+        return hpLine;
+      }
       case 'roll_death_save': {
         const icons = `${result.successes}✓ / ${result.failures}✗`;
         if (result.outcome === 'dead')             return `💀 roll_death_save(${result.charName}): rolled ${result.roll} — THREE FAILURES — ${result.charName} has DIED`;

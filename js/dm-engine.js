@@ -161,12 +161,27 @@ EXAMPLE — item pickup:
   [System: item added, log updated]
   Turn 3: Write full narration of picking up the dagger.
 
-EXAMPLE — combat:
-  Turn 1: roll_dice("1d20+4", "attack vs goblin")
-  [System: total 17]
-  Turn 2: roll_dice("1d8+2", "sword damage") + modify_hp(goblinId, -9, "sword strike")
-  [System: damage 9, goblin HP 3/12]
-  Turn 3: Write vivid attack narrative.
+EXAMPLE — combat start:
+  Turn 1: enter_combat([pcId, goblinId, ...])
+  [System: initiative order set, Round 1, goblin acts first]
+  Turn 2: get_combat_state() — confirm who is acting
+  [System: goblin is active, has Action + Bonus Action]
+  Turn 3: roll_dice("1d20+4", "goblin attacks Aria")
+  [System: total 14 — hits AC 13]
+  Turn 4: roll_dice("1d6+2", "goblin dagger damage") + modify_hp(pcId, -5, "goblin dagger") + use_action(goblinId, "Dagger attack on Aria")
+  [System: 5 damage dealt, Aria HP 11/16, action used]
+  Turn 5: use_movement(goblinId, 15) + next_turn(goblinId)
+  [System: goblin moved 15 ft, turn advanced to Aria]
+  Turn 6: Write vivid narrative of the goblin's attack, then prompt the player for Aria's action.
+
+EXAMPLE — combat single attack (mid-combat, PC's turn):
+  Turn 1: roll_dice("1d20+5", "Aria attacks goblin")
+  [System: total 18 — hits AC 13]
+  Turn 2: roll_dice("1d8+3", "longsword damage") + modify_hp(goblinId, -10, "longsword strike") + use_action(pcId, "Longsword attack on goblin")
+  [System: 10 damage, goblin HP 0/8 — DEAD]
+  Turn 3: next_turn(pcId)
+  [System: turn advances, round may increment]
+  Turn 4: Write vivid narrative of the killing blow.
 
 EXAMPLE — casting a levelled spell (e.g. Fireball):
   Turn 1: get_spell_slots(characterId) — confirm L3 slot is available
@@ -775,6 +790,44 @@ function buildToolCallStatusMessage(toolCalls) {
       }
       case 'compress_history':
         return `📜 Compressing history`;
+      case 'enter_combat':
+        return `⚔️ Entering combat — rolling initiative`;
+      case 'end_combat':
+        return `🏁 Ending combat`;
+      case 'next_turn': {
+        const ch = tc.characterId ? getCharacter(tc.characterId) : null;
+        return ch ? `⏭️ Ending ${ch.name}'s turn` : `⏭️ Advancing turn`;
+      }
+      case 'use_action': {
+        const ch = getCharacter(tc.characterId);
+        return `⚡ ${ch?.name || 'Character'} uses their Action: ${tc.actionDescription || ''}`;
+      }
+      case 'use_bonus_action': {
+        const ch = getCharacter(tc.characterId);
+        return `⚡ ${ch?.name || 'Character'} uses Bonus Action: ${tc.actionDescription || ''}`;
+      }
+      case 'use_reaction': {
+        const ch = getCharacter(tc.characterId);
+        return `⚡ ${ch?.name || 'Character'} uses Reaction: ${tc.actionDescription || ''}`;
+      }
+      case 'use_movement': {
+        const ch = getCharacter(tc.characterId);
+        return `🏃 ${ch?.name || 'Character'} moves ${tc.feetUsed || '?'} ft`;
+      }
+      case 'action_surge': {
+        const ch = getCharacter(tc.characterId);
+        return `💥 ${ch?.name || 'Fighter'} uses Action Surge!`;
+      }
+      case 'remove_from_combat': {
+        const ch = getCharacter(tc.characterId);
+        return `🚫 Removing ${ch?.name || 'combatant'} from combat`;
+      }
+      case 'set_initiative': {
+        const ch = getCharacter(tc.characterId);
+        return `🎲 Setting initiative for ${ch?.name || 'character'}`;
+      }
+      case 'get_combat_state':
+        return `📋 Checking combat state`;
       default:
         return null;
     }

@@ -270,11 +270,24 @@ export const DM_TOOLS = {
       db.saveCharacter(char);
     }
 
-    // If a PC is healed above 0 HP, clear death saves and unconscious state
+    // If a PC is healed above 0 HP, clear death saves and unconscious state,
+    // and restore their isAlive flag in any active combat initiative order.
     if (!isDead && !char.isNPC && char.deathSaves) {
       char.deathSaves = null;
       char.conditions = char.conditions.filter(c => c !== 'Unconscious' && c !== 'Stable');
       db.saveCharacter(char);
+
+      // Restore isAlive in initiative order so they can take turns again
+      const allStories = db.getAllStories();
+      for (const story of allStories) {
+        if (story.combat?.active) {
+          const combatEntry = story.combat.initiativeOrder.find(e => e.characterId === char.id);
+          if (combatEntry && !combatEntry.isAlive) {
+            combatEntry.isAlive = true;
+            db.saveStory(story);
+          }
+        }
+      }
     }
 
     return {
@@ -988,7 +1001,8 @@ ${transcript.slice(0, 10000)}`,
     for (const id of allIds) {
       const char = db.getCharacter(id);
       if (!char) continue;
-      if (char.stats.hp <= 0) continue; // skip already-dead characters
+      // PCs at 0 HP still need death save turns; only skip NPCs (or confirmed Dead PCs)
+      if (char.stats.hp <= 0 && (char.isNPC || char.conditions?.includes('Dead'))) continue;
 
       const dexMod  = Math.floor(((char.stats.dexterity || 10) - 10) / 2);
       const roll    = (id in overrides)

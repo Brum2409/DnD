@@ -20,15 +20,56 @@
       align-items: center;
       justify-content: center;
       padding: 2rem 1rem;
+      position: relative;
+      overflow: hidden;
       background:
-        radial-gradient(ellipse at 20% 50%, rgba(123,79,200,0.08) 0%, transparent 60%),
-        radial-gradient(ellipse at 80% 20%, rgba(201,168,76,0.06) 0%, transparent 50%),
+        radial-gradient(ellipse at 15% 40%, rgba(123,79,200,0.18) 0%, transparent 50%),
+        radial-gradient(ellipse at 85% 20%, rgba(201,168,76,0.12) 0%, transparent 45%),
+        radial-gradient(ellipse at 60% 80%, rgba(123,79,200,0.10) 0%, transparent 45%),
         var(--color-bg);
+    }
+
+    /* Animated background orbs */
+    .login-page::before {
+      content: '';
+      position: fixed;
+      width: 600px;
+      height: 600px;
+      border-radius: 50%;
+      background: radial-gradient(ellipse, rgba(123,79,200,0.12) 0%, transparent 70%);
+      top: -200px;
+      left: -150px;
+      pointer-events: none;
+      animation: orbFloat1 20s ease-in-out infinite alternate;
+    }
+
+    .login-page::after {
+      content: '';
+      position: fixed;
+      width: 500px;
+      height: 500px;
+      border-radius: 50%;
+      background: radial-gradient(ellipse, rgba(201,168,76,0.10) 0%, transparent 70%);
+      bottom: -150px;
+      right: -100px;
+      pointer-events: none;
+      animation: orbFloat2 24s ease-in-out infinite alternate;
+    }
+
+    @keyframes orbFloat1 {
+      0%   { transform: translate(0, 0) scale(1); }
+      100% { transform: translate(60px, 80px) scale(1.15); }
+    }
+    @keyframes orbFloat2 {
+      0%   { transform: translate(0, 0) scale(1); }
+      100% { transform: translate(-50px, -60px) scale(1.1); }
     }
 
     .login-card {
       width: 100%;
-      max-width: 420px;
+      max-width: 440px;
+      position: relative;
+      z-index: 1;
     }
 
     .login-brand {
@@ -39,26 +80,44 @@
     .login-brand-icon {
       font-size: 3rem;
       display: block;
-      margin-bottom: 0.5rem;
+      margin-bottom: 0.75rem;
+      filter: drop-shadow(0 0 20px rgba(201,168,76,0.4));
     }
 
     .login-brand-title {
       font-family: var(--font-display);
-      font-size: 1.8rem;
+      font-size: 2rem;
       color: var(--color-primary);
-      letter-spacing: 0.04em;
+      letter-spacing: 0.06em;
+      text-shadow: 0 0 40px rgba(201,168,76,0.3);
     }
 
     .login-brand-sub {
       font-family: var(--font-ui);
-      font-size: 0.85rem;
+      font-size: 0.82rem;
       color: var(--color-text-muted);
-      margin-top: 0.25rem;
+      margin-top: 0.3rem;
+      letter-spacing: 0.04em;
+    }
+
+    /* Glass card */
+    .login-glass-card {
+      background: rgba(10, 10, 16, 0.82);
+      backdrop-filter: blur(28px) saturate(1.5);
+      -webkit-backdrop-filter: blur(28px) saturate(1.5);
+      border: 1px solid rgba(201, 168, 76, 0.22);
+      border-radius: var(--radius-xl);
+      box-shadow:
+        0 24px 80px rgba(0,0,0,0.7),
+        0 0 0 1px rgba(255,255,255,0.04),
+        inset 0 1px 0 rgba(255,255,255,0.08),
+        inset 0 -1px 0 rgba(0,0,0,0.2);
+      padding: 2rem;
     }
 
     .login-tabs {
       display: flex;
-      border-bottom: 1px solid var(--color-border);
+      border-bottom: 1px solid rgba(201, 168, 76, 0.15);
       margin-bottom: 1.75rem;
     }
 
@@ -73,6 +132,7 @@
       color: var(--color-text-muted);
       cursor: pointer;
       transition: color 0.15s, border-color 0.15s;
+      margin-bottom: -1px;
     }
 
     .login-tab.active {
@@ -94,6 +154,7 @@
 
     .login-error {
       background: rgba(220, 53, 69, 0.12);
+      backdrop-filter: blur(8px);
       border: 1px solid rgba(220, 53, 69, 0.3);
       border-radius: var(--radius);
       padding: 0.75rem 1rem;
@@ -112,6 +173,8 @@
       width: 100%;
       justify-content: center;
       margin-top: 0.5rem;
+      font-family: var(--font-display);
+      letter-spacing: 0.04em;
     }
 
     .login-divider {
@@ -137,6 +200,16 @@
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
+
+    /* Input glass style override */
+    .login-glass-card input {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: rgba(201, 168, 76, 0.18);
+    }
+    .login-glass-card input:focus {
+      border-color: var(--color-primary);
+      background: rgba(201, 168, 76, 0.06);
+    }
   </style>
 </head>
 <body>
@@ -151,9 +224,8 @@
       <div class="login-brand-sub">AI-Powered Dungeon Master</div>
     </div>
 
-    <!-- Card -->
-    <div class="card">
-      <div class="card-body" style="padding: 1.75rem;">
+    <!-- Glass Card -->
+    <div class="login-glass-card">
 
         <!-- Tabs -->
         <div class="login-tabs">
@@ -219,7 +291,6 @@
           </div>
         </div>
 
-      </div>
     </div>
 
   </div>

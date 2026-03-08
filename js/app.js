@@ -99,6 +99,24 @@ function initHamburger() {
     overlay.classList.remove('open');
     drawer.setAttribute('aria-hidden', 'true');
   });
+
+  // Close drawer on nav link click (mobile UX)
+  drawer.querySelectorAll('a').forEach(a => {
+    a.addEventListener('click', () => {
+      drawer.classList.remove('open');
+      overlay?.classList.remove('open');
+      drawer.setAttribute('aria-hidden', 'true');
+    });
+  });
+
+  // Drawer settings button → triggers main settings btn
+  const drawerSettingsBtn = document.getElementById('drawer-settings-btn');
+  drawerSettingsBtn?.addEventListener('click', () => {
+    drawer.classList.remove('open');
+    overlay?.classList.remove('open');
+    drawer.setAttribute('aria-hidden', 'true');
+    document.getElementById('settings-btn')?.click();
+  });
 }
 
 // ── Settings modal ────────────────────────────────────────────

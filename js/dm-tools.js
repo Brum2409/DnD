@@ -1461,7 +1461,8 @@ export function formatToolResultsForRePrompt(toolResults) {
         return `✅ drop_concentration(${result.charName}): ${result.dropped ? `Dropped ${result.dropped}` : 'Not concentrating'}`;
       case 'short_rest': {
         const rollStr = (result.rolls || []).join(', ');
-        return `✅ short_rest(${result.charName}): Spent ${result.diceSpent}×${result.hitDie}+${result.conMod} [${rollStr}] → healed ${result.healed} HP (now ${result.newHp}/${result.maxHp}) | Hit dice left: ${result.diceAvailable}`;
+        const conModStr = result.conMod >= 0 ? `+${result.conMod}` : `${result.conMod}`;
+        return `✅ short_rest(${result.charName}): Spent ${result.diceSpent}×${result.hitDie}${conModStr} [${rollStr}] → healed ${result.healed} HP (now ${result.newHp}/${result.maxHp}) | Hit dice left: ${result.diceAvailable}`;
       }
       case 'long_rest': {
         let restMsg = `✅ long_rest(${result.charName}): Full rest — HP ${result.newHp}/${result.maxHp} | Spell slots: ${result.spellSlots} | Hit dice restored: ${result.hitDiceRestored} (${result.hitDiceAvailable}/${result.hitDiceTotal} available)`;

@@ -236,6 +236,13 @@
     .char-mini-card.npc-card:hover { background: rgba(90,60,130,0.18); }
     .char-mini-card.npc-card::before { display: none; }
 
+    /* Fallen/dead cards — greyed out */
+    .char-mini-card.char-fallen {
+      opacity: 0.55;
+      filter: grayscale(0.6);
+    }
+    .char-mini-card.char-fallen::before { background: rgba(204,68,68,0.4) !important; }
+
     .char-mini-top {
       display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.65rem;
     }
@@ -458,6 +465,7 @@
     .tool-badge.tool-item     { border-color: var(--color-primary); background: var(--color-primary-glow); color: var(--color-primary); }
     .tool-badge.tool-death    { border-color: var(--color-danger);  background: var(--color-danger-glow);  color: var(--color-danger);  font-weight: 700; }
     .tool-badge.tool-scene    { border-color: var(--color-accent);  background: var(--color-accent-glow);  color: var(--color-accent); }
+    .tool-badge.tool-combat   { border-color: rgba(220,130,30,0.7); background: rgba(220,130,30,0.1);      color: #e08830; }
 
     /* NPC / World character speech bubble */
     .msg-npc {
@@ -618,6 +626,13 @@
     }
     .combat-participant.is-pc {
       border-color: rgba(201,168,76,0.3);
+    }
+    .combat-participant.is-dead {
+      opacity: 0.4;
+      text-decoration: line-through;
+      border-color: rgba(255,255,255,0.06);
+      color: var(--color-text-faint);
+      pointer-events: none;
     }
     .combat-participant.active-turn.is-pc {
       background: rgba(201,168,76,0.18);
@@ -1209,6 +1224,7 @@ function renderCharPanel() {
   container.innerHTML = chars.map(ch => {
     const hpPct = Math.max(0, Math.min(100, (ch.stats.hp / ch.stats.maxHp) * 100));
     const hpColor = hpPct > 60 ? 'var(--color-success)' : hpPct > 25 ? 'var(--color-primary)' : 'var(--color-danger)';
+    const isFallen = ch.stats.hp <= 0;
     const conditionHtml = ch.conditions.map(c =>
       `<span class="condition-chip">${escHtml(c)}</span>`
     ).join('');
@@ -1232,20 +1248,20 @@ function renderCharPanel() {
     const hdHtml   = `<div style="font-family:var(--font-ui);font-size:0.62rem;color:var(--color-text-faint);margin-top:0.3rem;">🎲 HD: ${hdAvail}/${hdTotal}d${hitDie}</div>`;
 
     return `
-      <div class="char-mini-card" data-char-id="${ch.id}" title="Click to view full sheet">
+      <div class="char-mini-card${isFallen ? ' char-fallen' : ''}" data-char-id="${ch.id}" title="Click to view full sheet">
         <div class="char-mini-top">
           <div class="char-mini-portrait">
-            ${ch.portrait ? `<img src="${ch.portrait}" alt="" />` : '🧙'}
+            ${ch.portrait ? `<img src="${ch.portrait}" alt="" />` : (isFallen ? '💀' : '🧙')}
           </div>
           <div class="char-mini-info">
             <div class="char-mini-name">${escHtml(ch.name)}${inspirHtml}</div>
-            <div class="char-mini-sub">Lvl ${ch.level} ${ch.class}</div>
+            <div class="char-mini-sub">${isFallen ? '<span style="color:var(--color-danger);font-weight:600;">💀 Fallen</span>' : `Lvl ${ch.level} ${ch.class}`}</div>
           </div>
         </div>
         <div class="hp-bar-wrap">
           <div class="hp-bar-label">
             <span>HP</span>
-            <span>${ch.stats.hp} / ${ch.stats.maxHp}</span>
+            <span style="color:${isFallen ? 'var(--color-danger)' : 'inherit'};">${ch.stats.hp} / ${ch.stats.maxHp}</span>
           </div>
           <div class="hp-bar">
             <div class="hp-bar-fill" style="width:${hpPct}%;background:${hpColor};"></div>
@@ -1307,25 +1323,26 @@ function buildDeathSaveTrackerHtml(deathSaves) {
 function buildNpcCardHtml(npc) {
   const hpPct = Math.max(0, Math.min(100, (npc.stats.hp / npc.stats.maxHp) * 100));
   const hpColor = hpPct > 60 ? 'var(--color-success)' : hpPct > 25 ? 'var(--color-primary)' : 'var(--color-danger)';
+  const isDefeated = npc.stats.hp <= 0;
   const conditionHtml = (npc.conditions || []).map(c =>
     `<span class="condition-chip">${escHtml(c)}</span>`
   ).join('');
   const roleLabel = npc.npcRole || npc.class || 'NPC';
   return `
-    <div class="char-mini-card npc-card" data-char-id="${npc.id}" title="${escHtml(npc.personality || 'Click for details')}">
+    <div class="char-mini-card npc-card${isDefeated ? ' char-fallen' : ''}" data-char-id="${npc.id}" title="${escHtml(npc.personality || 'Click for details')}">
       <div class="char-mini-top">
         <div class="char-mini-portrait" style="border:1px solid rgba(120,80,180,0.4);">
-          ${npc.portrait ? `<img src="${npc.portrait}" alt="" />` : '🎭'}
+          ${npc.portrait ? `<img src="${npc.portrait}" alt="" />` : (isDefeated ? '💀' : '🎭')}
         </div>
         <div class="char-mini-info">
           <div class="char-mini-name">${escHtml(npc.name)}</div>
-          <div class="char-mini-sub" style="color:var(--color-accent,#a07ad0);">${escHtml(roleLabel)}</div>
+          <div class="char-mini-sub" style="color:${isDefeated ? 'var(--color-danger)' : 'var(--color-accent,#a07ad0)'};">${isDefeated ? '💀 Defeated' : escHtml(roleLabel)}</div>
         </div>
       </div>
       <div class="hp-bar-wrap">
         <div class="hp-bar-label">
           <span>HP</span>
-          <span>${npc.stats.hp} / ${npc.stats.maxHp}</span>
+          <span style="color:${isDefeated ? 'var(--color-danger)' : 'inherit'};">${npc.stats.hp} / ${npc.stats.maxHp}</span>
         </div>
         <div class="hp-bar">
           <div class="hp-bar-fill" style="width:${hpPct}%;background:${hpColor};"></div>
@@ -1490,14 +1507,18 @@ function renderCombatStrip() {
       const isActive = i === combat.turnIndex;
       const isPC     = !p.isNPC;
       const char     = p.id ? getCharacter(p.id) : null;
-      const hp       = char ? `${char.stats.hp}/${char.stats.maxHp}` : '';
-      const hpStr    = hp ? ` · ${hp}HP` : '';
+      const hp       = char ? char.stats.hp : undefined;
+      const maxHp    = char ? char.stats.maxHp : undefined;
+      const isDead   = hp !== undefined && hp <= 0;
+      const hpStr    = hp !== undefined ? ` · ${hp}/${maxHp}HP` : '';
       const classes  = ['combat-participant',
-        isActive ? 'active-turn' : '',
-        isPC     ? 'is-pc'       : '',
+        isActive && !isDead ? 'active-turn' : '',
+        isPC                ? 'is-pc'       : '',
+        isDead              ? 'is-dead'     : '',
       ].filter(Boolean).join(' ');
-      return `<span class="${classes}" title="${escHtml(p.name)} — Initiative ${p.initiative}${hp ? ' · ' + hp + ' HP' : ''}">` +
-        `${isActive ? '▶ ' : ''}${escHtml(p.name)}` +
+      const prefix   = isActive && !isDead ? '▶ ' : isDead ? '💀 ' : '';
+      return `<span class="${classes}" title="${escHtml(p.name)} — Initiative ${p.initiative}${hp !== undefined ? ' · ' + hp + '/' + maxHp + ' HP' : ''}">` +
+        `${prefix}${escHtml(p.name)}` +
         `<span style="opacity:0.65;font-size:0.6rem;">[${p.initiative}]${hpStr}</span>` +
         `</span>`;
     }).join('');
@@ -1603,17 +1624,18 @@ function appendToolBadge(summary) {
   el.className = 'tool-badge';
 
   // Apply colour class based on content
-  if      (summary.includes('💀') || summary.includes('fallen'))       el.classList.add('tool-death');
-  else if (summary.includes('⚔️') || summary.includes('damage'))       el.classList.add('tool-damage');
-  else if (summary.includes('❤️') || summary.includes('heal'))         el.classList.add('tool-heal');
-  else if (summary.includes('💤') || summary.includes('short rest'))   el.classList.add('tool-heal');
-  else if (summary.includes('🌙') || summary.includes('long rest'))    el.classList.add('tool-heal');
-  else if (summary.includes('🎒') || summary.includes('item'))         el.classList.add('tool-item');
-  else if (summary.includes('🗺️') || summary.includes('Scene'))        el.classList.add('tool-scene');
-  else if (summary.includes('🖼️') || summary.includes('image refresh'))el.classList.add('tool-scene');
-  else if (summary.includes('⚔️ Combat') || summary.includes('Round')) el.classList.add('tool-damage');
-  else if (summary.includes('🔮'))                                      el.classList.add('tool-item');
-  else if (summary.includes('✦') || summary.includes('Inspiration'))   el.classList.add('tool-item');
+  if      (summary.includes('💀') || summary.includes('fallen'))         el.classList.add('tool-death');
+  else if (summary.includes('⚔️ Combat') || summary.includes('⏭️') ||
+           summary.includes('✅ Combat ended'))                           el.classList.add('tool-combat');
+  else if (summary.includes('⚔️') || summary.includes('damage'))         el.classList.add('tool-damage');
+  else if (summary.includes('❤️') || summary.includes('heal'))           el.classList.add('tool-heal');
+  else if (summary.includes('💤') || summary.includes('short rest'))     el.classList.add('tool-heal');
+  else if (summary.includes('🌙') || summary.includes('long rest'))      el.classList.add('tool-heal');
+  else if (summary.includes('🎒') || summary.includes('item'))           el.classList.add('tool-item');
+  else if (summary.includes('🗺️') || summary.includes('Scene'))          el.classList.add('tool-scene');
+  else if (summary.includes('🖼️') || summary.includes('image refresh'))  el.classList.add('tool-scene');
+  else if (summary.includes('🔮'))                                        el.classList.add('tool-item');
+  else if (summary.includes('✦') || summary.includes('Inspiration'))     el.classList.add('tool-item');
 
   el.textContent = summary;
   container.appendChild(el);

@@ -236,12 +236,22 @@
     .char-mini-card.npc-card:hover { background: rgba(90,60,130,0.18); }
     .char-mini-card.npc-card::before { display: none; }
 
-    /* Fallen/dead cards — greyed out */
+    /* Fallen/dead cards — portrait greyed, text stays readable */
     .char-mini-card.char-fallen {
-      opacity: 0.55;
-      filter: grayscale(0.6);
+      background: rgba(180,30,30,0.06);
+      border-bottom-color: rgba(220,60,60,0.12);
     }
-    .char-mini-card.char-fallen::before { background: rgba(204,68,68,0.4) !important; }
+    .char-mini-card.char-fallen:hover { background: rgba(180,30,30,0.1); }
+    .char-mini-card.char-fallen::before { background: rgba(204,68,68,0.5); }
+    .char-mini-card.char-fallen:hover::before { background: rgba(204,68,68,0.7); }
+    .char-mini-card.char-fallen .char-mini-portrait {
+      filter: grayscale(0.8) brightness(0.6);
+      border-color: rgba(204,68,68,0.3);
+    }
+    /* NPC fallen cards use border-left instead of ::before */
+    .char-mini-card.npc-card.char-fallen {
+      border-left-color: rgba(220,60,60,0.55);
+    }
 
     .char-mini-top {
       display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.65rem;
@@ -1510,7 +1520,7 @@ function renderCombatStrip() {
       const hp       = char ? char.stats.hp : undefined;
       const maxHp    = char ? char.stats.maxHp : undefined;
       const isDead   = hp !== undefined && hp <= 0;
-      const hpStr    = hp !== undefined ? ` · ${hp}/${maxHp}HP` : '';
+      const hpStr    = hp !== undefined ? ` · ${hp}/${maxHp} HP` : '';
       const classes  = ['combat-participant',
         isActive && !isDead ? 'active-turn' : '',
         isPC                ? 'is-pc'       : '',
@@ -1626,16 +1636,23 @@ function appendToolBadge(summary) {
   // Apply colour class based on content
   if      (summary.includes('💀') || summary.includes('fallen'))         el.classList.add('tool-death');
   else if (summary.includes('⚔️ Combat') || summary.includes('⏭️') ||
-           summary.includes('✅ Combat ended'))                           el.classList.add('tool-combat');
+           summary.includes('Combat ended'))                              el.classList.add('tool-combat');
   else if (summary.includes('⚔️') || summary.includes('damage'))         el.classList.add('tool-damage');
+  else if (summary.includes('💔') || summary.includes('loses concentration')) el.classList.add('tool-damage');
+  else if (summary.includes('⚡'))                                        el.classList.add('tool-damage');
   else if (summary.includes('❤️') || summary.includes('heal'))           el.classList.add('tool-heal');
+  else if (summary.includes('💚') || summary.includes('STABLE'))         el.classList.add('tool-heal');
   else if (summary.includes('💤') || summary.includes('short rest'))     el.classList.add('tool-heal');
   else if (summary.includes('🌙') || summary.includes('long rest'))      el.classList.add('tool-heal');
   else if (summary.includes('🎒') || summary.includes('item'))           el.classList.add('tool-item');
+  else if (summary.includes('💰') || summary.includes('⭐') ||
+           summary.includes('✦') || summary.includes('Inspiration'))     el.classList.add('tool-item');
+  else if (summary.includes('🌟') || summary.includes('✨') ||
+           summary.includes('🔮') || summary.includes('📖'))             el.classList.add('tool-item');
+  else if (summary.includes('🎭') || summary.includes('📋') ||
+           summary.includes('📜') || summary.includes('🚪'))             el.classList.add('tool-scene');
   else if (summary.includes('🗺️') || summary.includes('Scene'))          el.classList.add('tool-scene');
   else if (summary.includes('🖼️') || summary.includes('image refresh'))  el.classList.add('tool-scene');
-  else if (summary.includes('🔮'))                                        el.classList.add('tool-item');
-  else if (summary.includes('✦') || summary.includes('Inspiration'))     el.classList.add('tool-item');
 
   el.textContent = summary;
   container.appendChild(el);

@@ -233,8 +233,8 @@ EXAMPLE — fetching context:
 • Party moves to a new location / scene     → advance_scene
 • End of a significant encounter            → log_event for each character
 • Character casts a levelled spell          → use_spell_slot (NOT for cantrips)
-• Character completes a long rest           → restore_spell_slots (restType="long")
-• Character completes a short rest (warlock)→ restore_spell_slots (restType="short")
+• Character completes a long rest           → long_rest (restores HP, slots, hit dice — all-in-one)
+• Character completes a short rest (warlock)→ short_rest (also auto-recovers pact magic slots)
 • Character learns / receives a spell       → give_spell (create_spell first if new)
 • Scene visual changes significantly        → refresh_scene_image
   (fire breaks out, dragon arrives, room transforms, weather shifts, etc.)
@@ -316,9 +316,12 @@ MAGIC (spells and spell slots):
 - remove_spell:     {"tool":"remove_spell","characterId":"<id>","spellId":"<spell-id>"}
   Removes a spell from the character's known spells.
 
-- use_spell_slot:   {"tool":"use_spell_slot","characterId":"<id>","slotLevel":<1-9>,"spellName":"<name>"}
+- use_spell_slot:   {"tool":"use_spell_slot","characterId":"<id>","slotLevel":<1-9>,"spellName":"<name>","concentration":<bool>}
   Expends one spell slot. Call this whenever a character casts a levelled spell.
   Cantrips are free — never call use_spell_slot for cantrips (level 0).
+  Set concentration=true for spells that require concentration (e.g. Hold Person, Hypnotic Pattern, Fly).
+    — If the character already has a concentration spell active, it is dropped automatically.
+    — After this call, check_concentration must be called whenever the caster takes damage.
   ⚠️ Always check remaining slots via the quick-ref before allowing a cast.
   A character with 0 available slots at the required level CANNOT cast that spell.
 
@@ -540,7 +543,7 @@ ${toolDocs}
 7. ALWAYS use modify_hp for any damage or healing — for both PCs and NPCs.
 8. ALWAYS use add_item when a character picks up, receives, or loots any item. Use create_item first if the item is new.
 8b. ALWAYS use use_spell_slot when a character casts a levelled spell. Check the quick-ref for available slots first — if 0 remain, the character CANNOT cast that spell level and must use a different level or choose a cantrip.
-8c. ALWAYS use restore_spell_slots at the end of a long rest. For Warlocks ALSO use it after a short rest.
+8c. ALWAYS use long_rest at the end of a full night's rest — it handles HP, spell slots, and hit dice in one call. For short rests, use short_rest. Do NOT call restore_spell_slots manually after either rest type — the rest tools handle slots automatically.
 9. ALWAYS use modify_xp when the party completes a meaningful objective, defeats enemies, or achieves something significant.
 10. When a scene naturally concludes and a new environment begins, use advance_scene.
 10b. When the scene's visual environment changes meaningfully mid-scene, call refresh_scene_image with a full description of what it now looks like.
@@ -703,6 +706,22 @@ function buildToolCallStatusMessage(toolCalls) {
       case 'get_spell_slots': {
         const ch = getCharacter(tc.characterId);
         return `📋 Checking spell slots for ${ch?.name || 'character'}`;
+      }
+      case 'roll_death_save': {
+        const ch = getCharacter(tc.characterId);
+        return `💀 Rolling death save for ${ch?.name || 'character'}`;
+      }
+      case 'create_quest':
+        return `📋 Creating quest: ${tc.title || 'new quest'}`;
+      case 'update_quest_objective':
+        return `📋 Updating quest objective`;
+      case 'complete_quest':
+        return `📋 Completing quest`;
+      case 'get_quests':
+        return `📋 Reading quest journal`;
+      case 'get_character_stat': {
+        const ch = getCharacter(tc.characterId);
+        return `📋 Reading ${ch?.name || 'character'}'s ${tc.stat || 'stat'}`;
       }
       case 'compress_history':
         return `📜 Compressing history`;

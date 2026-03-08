@@ -1277,8 +1277,10 @@ ${transcript.slice(0, 10000)}`,
       charName:         char.name,
       hpRestored:       char.stats.maxHp - prevHp,
       newHp:            char.stats.maxHp,
+      maxHp:            char.stats.maxHp,
       hitDiceRestored:  restored,
       hitDiceAvailable: level - char.hitDiceUsed,
+      hitDiceTotal:     level,
       spellSlots:       slotSummary,
       droppedConcentration: droppedConc,
     };
@@ -1394,6 +1396,8 @@ export function formatToolResultsForRePrompt(toolResults) {
         return result.newHp !== undefined
           ? `✅ set_npc_stat: NPC HP → ${result.newHp}/${result.maxHp}`
           : `✅ set_npc_stat: ${result.stat} set to ${result.value}`;
+      case 'get_character_stat':
+        return `ℹ️ ${params.stat} = ${result.value}`;
       case 'get_character_stats':
         return `ℹ️ ${result.name || 'Character'}: HP ${result.hp}/${result.maxHp} | AC ${result.ac} | Gold ${result.gold} gp | XP ${result.xp} | Conditions: [${(result.conditions || []).join(', ') || 'none'}]`;
       case 'get_full_character': {
@@ -1449,8 +1453,9 @@ export function formatToolResultsForRePrompt(toolResults) {
         return `⏭️ next_turn: Round ${result.round} — ${p?.name || '?'}'s turn (Initiative: ${p?.initiative})${p?.hp !== undefined ? ` | HP: ${p.hp}/${p.maxHp}` : ''}`;
       }
       case 'check_concentration': {
-        if (result.success) return `✅ check_concentration(${result.charName}): rolled ${result.roll}+${result.conMod}=${result.total} vs DC ${result.dc} — SUCCESS, maintaining ${result.maintaining}`;
-        return `❌ check_concentration(${result.charName}): rolled ${result.roll}+${result.conMod}=${result.total} vs DC ${result.dc} — FAILED, concentration on ${result.lostConcentration} broken`;
+        const modStr = result.conMod >= 0 ? `+${result.conMod}` : `${result.conMod}`;
+        if (result.success) return `✅ check_concentration(${result.charName}): rolled ${result.roll}${modStr}=${result.total} vs DC ${result.dc} — SUCCESS, maintaining ${result.maintaining}`;
+        return `❌ check_concentration(${result.charName}): rolled ${result.roll}${modStr}=${result.total} vs DC ${result.dc} — FAILED, concentration on ${result.lostConcentration} broken`;
       }
       case 'drop_concentration':
         return `✅ drop_concentration(${result.charName}): ${result.dropped ? `Dropped ${result.dropped}` : 'Not concentrating'}`;
@@ -1458,8 +1463,11 @@ export function formatToolResultsForRePrompt(toolResults) {
         const rollStr = (result.rolls || []).join(', ');
         return `✅ short_rest(${result.charName}): Spent ${result.diceSpent}×${result.hitDie}+${result.conMod} [${rollStr}] → healed ${result.healed} HP (now ${result.newHp}/${result.maxHp}) | Hit dice left: ${result.diceAvailable}`;
       }
-      case 'long_rest':
-        return `✅ long_rest(${result.charName}): Full rest — HP ${result.newHp}/${result.newHp} | Spell slots: ${result.spellSlots} | Hit dice restored: ${result.hitDiceRestored} (${result.hitDiceAvailable} available)`;
+      case 'long_rest': {
+        let restMsg = `✅ long_rest(${result.charName}): Full rest — HP ${result.newHp}/${result.maxHp} | Spell slots: ${result.spellSlots} | Hit dice restored: ${result.hitDiceRestored} (${result.hitDiceAvailable}/${result.hitDiceTotal} available)`;
+        if (result.droppedConcentration) restMsg += ` | Dropped concentration on ${result.droppedConcentration}`;
+        return restMsg;
+      }
       case 'give_inspiration':
         return `✅ give_inspiration(${result.charName}): Inspiration awarded${result.reason ? ` — ${result.reason}` : ''}`;
       case 'use_inspiration':
@@ -1676,8 +1684,8 @@ export function toolResultSummary(tool, params, result) {
     }
     case 'check_concentration':
       return result.success
-        ? `🔮 ${result.charName} maintains concentration (rolled ${result.total} vs DC ${result.dc})`
-        : `💔 ${result.charName} loses concentration on ${result.lostConcentration}! (rolled ${result.total} vs DC ${result.dc})`;
+        ? `🔮 ${result.charName} maintains ${result.maintaining} (CON save ${result.total} ≥ DC ${result.dc})`
+        : `💔 ${result.charName} loses concentration on ${result.lostConcentration}! (CON save ${result.total} < DC ${result.dc})`;
     case 'drop_concentration':
       return result.dropped
         ? `🔮 ${result.charName} drops concentration on ${result.dropped}`

@@ -734,6 +734,255 @@
       .char-mini-portrait { width: 44px; height: 44px; font-size: 1.1rem; }
     }
 
+    /* ── Combat Tracker ──────────────────────────────────────── */
+    .combat-tracker {
+      flex-shrink: 0;
+      background: rgba(6, 4, 12, 0.97);
+      border-bottom: 1px solid rgba(204, 60, 60, 0.35);
+      border-top: 1px solid rgba(204, 60, 60, 0.18);
+    }
+
+    .combat-tracker-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.3rem 1rem 0.28rem;
+      border-bottom: 1px solid rgba(255,255,255,0.055);
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    .combat-round-label {
+      font-family: var(--font-display);
+      font-size: 0.72rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #cc4444;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      flex-shrink: 0;
+    }
+
+    .combat-round-label .round-badge {
+      background: rgba(204, 60, 60, 0.18);
+      border: 1px solid rgba(204, 60, 60, 0.4);
+      border-radius: 4px;
+      padding: 0.1em 0.5em;
+      color: #e06060;
+      font-size: 0.8rem;
+      font-family: var(--font-ui);
+      font-weight: 700;
+    }
+
+    .combat-acting-label {
+      font-family: var(--font-ui);
+      font-size: 0.7rem;
+      color: var(--color-text-muted);
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .combat-acting-label strong {
+      color: var(--color-primary);
+    }
+
+    .combat-end-btn {
+      font-family: var(--font-ui);
+      font-size: 0.62rem;
+      padding: 0.22em 0.65em;
+      border: 1px solid rgba(204, 60, 60, 0.4);
+      border-radius: var(--radius);
+      background: rgba(204, 60, 60, 0.08);
+      color: #e05050;
+      cursor: pointer;
+      transition: all 0.2s;
+      flex-shrink: 0;
+      white-space: nowrap;
+    }
+    .combat-end-btn:hover {
+      background: rgba(204, 60, 60, 0.18);
+      border-color: rgba(204, 60, 60, 0.6);
+    }
+
+    /* Initiative track — horizontal scroll */
+    .combat-initiative-track {
+      display: flex;
+      gap: 0.45rem;
+      padding: 0.45rem 1rem 0.5rem;
+      overflow-x: auto;
+      overflow-y: hidden;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(201,168,76,0.18) transparent;
+      align-items: flex-start;
+    }
+    .combat-initiative-track::-webkit-scrollbar { height: 4px; }
+    .combat-initiative-track::-webkit-scrollbar-thumb { background: rgba(201,168,76,0.2); border-radius: 2px; }
+
+    /* Individual combatant card */
+    .combatant-card {
+      flex-shrink: 0;
+      background: rgba(255,255,255,0.035);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: var(--radius);
+      padding: 0.4rem 0.6rem;
+      min-width: 110px;
+      max-width: 155px;
+      position: relative;
+      transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+    }
+
+    /* Active turn */
+    .combatant-card.is-current-turn {
+      border-color: rgba(201,168,76,0.65);
+      background: rgba(201,168,76,0.065);
+      box-shadow: 0 0 14px rgba(201,168,76,0.18), inset 0 0 8px rgba(201,168,76,0.04);
+    }
+
+    /* NPC / enemy default */
+    .combatant-card.is-npc {
+      border-color: rgba(120,80,180,0.22);
+      background: rgba(70,45,110,0.07);
+    }
+    .combatant-card.is-npc.is-current-turn {
+      border-color: rgba(150,100,220,0.65);
+      background: rgba(90,60,140,0.12);
+      box-shadow: 0 0 14px rgba(140,90,200,0.2), inset 0 0 8px rgba(90,60,140,0.05);
+    }
+
+    /* Downed PC — 0 HP, still rolling death saves */
+    .combatant-card.is-downed {
+      border-color: rgba(220,100,30,0.5);
+      background: rgba(160,60,20,0.08);
+      opacity: 0.75;
+    }
+    .combatant-card.is-downed .combatant-name { color: rgba(230,140,80,0.9); }
+    .combatant-card.is-downed .combatant-init { color: rgba(230,140,80,0.7); }
+
+    /* Dead / removed */
+    .combatant-card.is-dead {
+      opacity: 0.28;
+      filter: grayscale(1);
+      pointer-events: none;
+    }
+
+    .combatant-card-top {
+      display: flex;
+      align-items: baseline;
+      gap: 0.35rem;
+      margin-bottom: 0.2rem;
+    }
+
+    .combatant-init {
+      font-family: var(--font-display);
+      font-size: 1.05rem;
+      font-weight: 700;
+      line-height: 1;
+      color: var(--color-primary);
+      flex-shrink: 0;
+    }
+    .combatant-card.is-npc .combatant-init { color: rgba(180,140,230,0.9); }
+
+    .combatant-name {
+      font-family: var(--font-ui);
+      font-size: 0.7rem;
+      color: var(--color-text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 1.2;
+    }
+
+    /* HP mini-bar */
+    .combatant-hp-bar {
+      height: 3px;
+      background: rgba(255,255,255,0.07);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-bottom: 0.28rem;
+    }
+    .combatant-hp-fill {
+      height: 100%;
+      border-radius: 2px;
+      transition: width 0.4s ease;
+    }
+
+    /* Action economy pips */
+    .combatant-actions {
+      display: flex;
+      gap: 3px;
+      flex-wrap: wrap;
+      margin-bottom: 0.22rem;
+    }
+
+    .act-pip {
+      font-family: var(--font-ui);
+      font-size: 0.48rem;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      padding: 1px 4px;
+      border-radius: 3px;
+      white-space: nowrap;
+    }
+
+    /* Available states */
+    .act-pip.act-avail  { background: rgba(201,168,76,0.2); border: 1px solid rgba(201,168,76,0.5); color: var(--color-primary); }
+    .act-pip.bon-avail  { background: rgba(80,200,130,0.15); border: 1px solid rgba(80,200,130,0.4); color: #50c880; }
+    .act-pip.rea-avail  { background: rgba(80,140,220,0.15); border: 1px solid rgba(80,140,220,0.4); color: #709ede; }
+    .act-pip.extra-avail { background: rgba(220,110,60,0.2); border: 1px solid rgba(220,130,70,0.5); color: #e0804a; }
+
+    /* Used / spent states */
+    .act-pip.act-used, .act-pip.bon-used, .act-pip.rea-used {
+      background: rgba(255,255,255,0.025);
+      border: 1px solid rgba(255,255,255,0.1);
+      color: rgba(255,255,255,0.2);
+      text-decoration: line-through;
+    }
+
+    /* Movement pip — always shown with remaining feet */
+    .act-pip.mov-pip {
+      background: rgba(180,150,90,0.12);
+      border: 1px solid rgba(180,150,90,0.3);
+      color: rgba(200,168,100,0.8);
+    }
+    .act-pip.mov-pip.mov-spent { opacity: 0.35; }
+
+    /* Condition chips inside combatant card */
+    .combatant-conds {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 2px;
+    }
+    .combatant-cond-chip {
+      font-family: var(--font-ui);
+      font-size: 0.47rem;
+      padding: 1px 4px;
+      border-radius: 99px;
+      background: rgba(200,60,60,0.1);
+      border: 1px solid rgba(200,60,60,0.28);
+      color: #d05050;
+      max-width: 64px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* Active turn indicator arrow */
+    .combatant-active-indicator {
+      font-family: var(--font-ui);
+      font-size: 0.5rem;
+      text-align: center;
+      color: var(--color-primary);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      margin-top: 0.2rem;
+      opacity: 0.9;
+    }
+    .combatant-card.is-npc .combatant-active-indicator { color: rgba(180,140,230,0.9); }
+
     /* ── Scroll fade top ── */
     .chat-history-wrap { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
     .chat-history-wrap::before {
@@ -859,6 +1108,25 @@
     </div>
   </div>
 
+  <!-- ⚔ Combat Tracker — visible only when combat is active -->
+  <div class="combat-tracker" id="combat-tracker" style="display:none;" role="region" aria-label="Combat tracker">
+    <div class="combat-tracker-header">
+      <div class="combat-round-label">
+        ⚔ Combat
+        <span class="round-badge" id="combat-round-badge">Round 1</span>
+      </div>
+      <div class="combat-acting-label">
+        Acting: <strong id="combat-current-name">—</strong>
+      </div>
+      <button class="combat-end-btn" id="combat-end-hint" title="Tell the DM to end combat">
+        🏁 End Combat
+      </button>
+    </div>
+    <div class="combat-initiative-track" id="combat-initiative-track" aria-label="Initiative order">
+      <!-- Combatant cards injected by renderCombatTracker() -->
+    </div>
+  </div>
+
   <!-- Lower area: char panel + chat -->
   <div class="game-lower" id="game-lower" style="display:none;">
 
@@ -967,6 +1235,7 @@ async function boot() {
 
   renderScene();
   renderCharPanel();
+  renderCombatTracker();
   renderChatHistory();
   scrollChatBottom(false);
 
@@ -1354,6 +1623,132 @@ function toggleQuestPanel() {
   if (!isOpen) renderQuestPanel();
 }
 
+// ── Combat Tracker rendering ──────────────────────────────────
+/**
+ * Render the combat tracker strip above the game-lower area.
+ * Reads activeStory.combat — shows/hides based on whether combat is active.
+ */
+function renderCombatTracker() {
+  const trackerEl = document.getElementById('combat-tracker');
+  if (!trackerEl) return;
+
+  const combat = activeStory?.combat;
+
+  if (!combat?.active) {
+    trackerEl.style.display = 'none';
+    return;
+  }
+
+  trackerEl.style.display = '';
+
+  // Update header
+  const roundBadge   = document.getElementById('combat-round-badge');
+  const currentName  = document.getElementById('combat-current-name');
+  if (roundBadge)  roundBadge.textContent  = `Round ${combat.round}`;
+
+  const currentEntry = combat.initiativeOrder[combat.currentTurnIndex];
+  if (currentName) currentName.textContent = currentEntry?.name || '—';
+
+  // Build combatant cards
+  const track = document.getElementById('combat-initiative-track');
+  if (!track) return;
+
+  track.innerHTML = combat.initiativeOrder.map((entry, i) => {
+    const char      = getCharacter(entry.characterId);
+    const hp        = char?.stats?.hp    ?? 0;
+    const maxHp     = char?.stats?.maxHp ?? 1;
+    const hpPct     = Math.max(0, Math.min(100, (hp / maxHp) * 100));
+    const hpColor   = hpPct > 60
+      ? 'var(--color-success)'
+      : hpPct > 25
+      ? 'var(--color-primary)'
+      : 'var(--color-danger)';
+    const conditions = char?.conditions || [];
+
+    const isCurrent = i === combat.currentTurnIndex;
+    const isDead    = !entry.isAlive;           // truly removed from combat
+    const isDowned  = entry.isAlive && hp <= 0 && !entry.isNPC; // PC making death saves
+    const isNPC     = entry.isNPC;
+
+    // ── Action economy pips (only shown for current combatant) ──
+    let actionPips = '';
+    if (isCurrent && !isDead && !isDowned) {
+      const actCls  = entry.hasAction      ? 'act-avail' : 'act-used';
+      const bonCls  = entry.hasBonusAction ? 'bon-avail' : 'bon-used';
+      const reaCls  = entry.hasReaction    ? 'rea-avail' : 'rea-used';
+      const movCls  = entry.movementRemaining > 0 ? 'mov-pip' : 'mov-pip mov-spent';
+      const extraPip = entry.hasExtraAction
+        ? `<span class="act-pip extra-avail" title="Action Surge extra action">+ACT</span>`
+        : '';
+      actionPips = `
+        <div class="combatant-actions" title="Action economy for this turn">
+          <span class="act-pip ${actCls}" title="Action">${entry.hasAction ? 'ACT' : 'ACT'}</span>
+          <span class="act-pip ${bonCls}" title="Bonus Action">BON</span>
+          <span class="act-pip ${reaCls}" title="Reaction (resets per round)">REA</span>
+          <span class="act-pip ${movCls}" title="Movement remaining">${entry.movementRemaining}ft</span>
+          ${extraPip}
+        </div>`;
+    }
+
+    // ── Condition chips (max 2 to keep card compact) ──
+    const condHtml = conditions.length > 0
+      ? `<div class="combatant-conds">${
+          conditions.slice(0, 3).map(c =>
+            `<span class="combatant-cond-chip" title="${escHtml(c)}">${escHtml(c.slice(0, 8))}</span>`
+          ).join('')
+        }</div>`
+      : '';
+
+    // ── Active turn indicator / downed indicator ──
+    let activeIndicator = '';
+    if (isCurrent && !isDead && !isDowned) {
+      activeIndicator = `<div class="combatant-active-indicator">▶ Your Turn</div>`;
+    } else if (isDowned) {
+      const char2 = getCharacter(entry.characterId);
+      const ds = char2?.deathSaves;
+      const dsText = ds ? ` ${ds.successes}✓ ${ds.failures}✗` : '';
+      activeIndicator = `<div class="combatant-active-indicator" style="color:rgba(230,140,80,0.9)">☠ Downed${dsText}</div>`;
+    }
+
+    const cardClasses = [
+      'combatant-card',
+      isCurrent && !isDead && !isDowned ? 'is-current-turn' : '',
+      isNPC                              ? 'is-npc'           : '',
+      isDead                             ? 'is-dead'          : '',
+      isDowned                           ? 'is-downed'        : '',
+    ].filter(Boolean).join(' ');
+
+    return `
+      <div class="${cardClasses}"
+           data-char-id="${entry.characterId}"
+           title="${escHtml(entry.name)} | Initiative: ${entry.initiative} | HP: ${hp}/${maxHp} | AC: ${char?.stats?.ac ?? '?'}">
+        <div class="combatant-card-top">
+          <span class="combatant-init">${entry.initiative}</span>
+          <span class="combatant-name">${escHtml(entry.name)}</span>
+          <span class="combatant-hp-text" style="font-size:0.65rem;opacity:0.7;margin-left:auto;">${isDead ? '☠' : `${hp}/${maxHp}`}</span>
+        </div>
+        <div class="combatant-hp-bar">
+          <div class="combatant-hp-fill" style="width:${hpPct}%;background:${hpColor};"></div>
+        </div>
+        ${actionPips}
+        ${condHtml}
+        ${activeIndicator}
+      </div>`;
+  }).join('');
+
+  // Attach click handlers — open the character slideover
+  track.querySelectorAll('.combatant-card[data-char-id]').forEach(card => {
+    card.style.cursor = 'pointer';
+    card.addEventListener('click', () => openSlideover(card.dataset.charId));
+  });
+
+  // Scroll the active card into view
+  const activeCard = track.children[combat.currentTurnIndex];
+  if (activeCard) {
+    activeCard.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+  }
+}
+
 // ── Chat history rendering ────────────────────────────────────
 function renderChatHistory() {
   if (!activeStory) return;
@@ -1614,10 +2009,11 @@ async function handleSend(overrideMessage) {
 
     scrollChatBottom();
 
-    // Refresh char panel in case HP/conditions changed
+    // Refresh char panel + combat tracker in case HP/conditions/combat state changed
     activeStory = getStory(activeStory.id) || activeStory;
     renderCharPanel();
     renderNPCPanel();
+    renderCombatTracker();
 
     // If scene advanced or scene image refreshed, update scene display
     if (result.sceneAdvanced || result.sceneImageRefreshed) {
@@ -1950,6 +2346,18 @@ function showDeathOverlay(msg) {
 }
 document.getElementById('death-dismiss').addEventListener('click', () => {
   document.getElementById('death-overlay').style.display = 'none';
+});
+
+// ── Combat tracker — "End Combat" hint button ─────────────────
+// This button nudges the player to tell the DM combat is over,
+// which then prompts the DM to call the end_combat tool.
+document.getElementById('combat-end-hint')?.addEventListener('click', () => {
+  const input = document.getElementById('player-input');
+  if (input && !dmTyping) {
+    input.value = 'The combat appears to be over. Please end combat and wrap up the encounter.';
+    input.focus();
+    // Don't auto-send — let the player review and edit if they prefer
+  }
 });
 
 // ── Mobile char panel toggle ──────────────────────────────────

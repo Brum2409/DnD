@@ -303,6 +303,77 @@
       border: 1px solid var(--color-danger); color: var(--color-danger);
     }
 
+    /* Quest journal panel */
+    .quest-card {
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      border-left: 2px solid rgba(201,168,76,0.35);
+      background: rgba(201,168,76,0.03);
+    }
+    .quest-card.quest-completed {
+      border-left-color: rgba(50,180,100,0.35);
+      background: rgba(50,180,100,0.03);
+      opacity: 0.7;
+    }
+    .quest-card.quest-failed {
+      border-left-color: rgba(180,50,50,0.35);
+      background: rgba(180,50,50,0.03);
+      opacity: 0.6;
+    }
+    .quest-title {
+      font-family: var(--font-display);
+      font-size: 0.78rem;
+      color: var(--color-primary);
+      margin-bottom: 0.2rem;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .quest-card.quest-completed .quest-title { color: var(--color-success); }
+    .quest-card.quest-failed    .quest-title { color: var(--color-danger); }
+    .quest-giver {
+      font-family: var(--font-ui); font-size: 0.62rem;
+      color: var(--color-text-faint); margin-bottom: 0.4rem;
+    }
+    .quest-objective {
+      display: flex; align-items: flex-start; gap: 0.35rem;
+      font-family: var(--font-ui); font-size: 0.68rem;
+      color: var(--color-text-muted); line-height: 1.4;
+      padding: 0.1rem 0;
+    }
+    .quest-objective.done { text-decoration: line-through; color: var(--color-text-faint); }
+    .quest-obj-icon { flex-shrink: 0; margin-top: 1px; }
+    .quest-reward {
+      font-family: var(--font-ui); font-size: 0.62rem;
+      color: rgba(201,168,76,0.7); margin-top: 0.35rem;
+    }
+    .quest-count-badge {
+      display: inline-block; font-family: var(--font-ui); font-size: 0.6rem;
+      background: rgba(201,168,76,0.15); border: 1px solid rgba(201,168,76,0.3);
+      color: var(--color-primary); border-radius: 999px; padding: 0.05em 0.45em;
+      margin-left: 0.3rem; vertical-align: middle;
+    }
+
+    /* Death saving throw tracker */
+    .death-saves-tracker {
+      margin-top: 0.45rem;
+      padding: 0.35rem 0.5rem;
+      background: rgba(180, 30, 30, 0.12);
+      border: 1px solid rgba(200, 50, 50, 0.35);
+      border-radius: var(--radius);
+    }
+    .death-saves-label {
+      font-family: var(--font-ui); font-size: 0.6rem; text-transform: uppercase;
+      letter-spacing: 0.07em; color: var(--color-danger); margin-bottom: 0.25rem;
+    }
+    .death-saves-row { display: flex; align-items: center; gap: 0.5rem; }
+    .death-saves-pips { display: flex; gap: 3px; }
+    .death-save-pip {
+      width: 12px; height: 12px; border-radius: 50%; font-size: 0.55rem;
+      display: flex; align-items: center; justify-content: center; line-height: 1;
+    }
+    .death-save-pip.success { background: rgba(50,180,100,0.25); border: 1px solid rgba(50,200,100,0.6); color: #3db868; }
+    .death-save-pip.fail    { background: rgba(180,40,40,0.25);  border: 1px solid rgba(220,60,60,0.6);  color: #e05050; }
+    .death-save-pip.empty   { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15); }
+
     .char-gold {
       font-family: var(--font-ui); font-size: 0.7rem;
       color: rgba(201,168,76,0.75);
@@ -807,6 +878,14 @@
       <div id="known-chars-cards" style="display:none;">
         <!-- All story NPCs not in current scene -->
       </div>
+
+      <!-- Quest Journal -->
+      <div class="char-panel-header" id="quest-panel-header" style="display:none;border-top:1px solid var(--color-border);margin-top:0.25rem;cursor:pointer;" onclick="toggleQuestPanel()">
+        📋 Quests <span id="quest-count-badge"></span><span id="quest-panel-toggle">▶</span>
+      </div>
+      <div id="quest-panel-cards" style="display:none;">
+        <!-- Quest cards injected by JS -->
+      </div>
     </aside>
 
     <!-- DM chat -->
@@ -846,6 +925,7 @@
   <div style="font-size:4rem;">💀</div>
   <h2>A Hero Falls!</h2>
   <p id="death-message">A character has been reduced to 0 HP.</p>
+  <p style="font-size:0.82rem;opacity:0.7;margin-top:0.5rem;">Death saving throws begin — 3 successes to stabilise, 3 failures means death.</p>
   <button class="btn btn-ghost" id="death-dismiss">Continue</button>
 </div>
 
@@ -1034,6 +1114,10 @@ function renderCharPanel() {
       `<span class="condition-chip">${escHtml(c)}</span>`
     ).join('');
 
+    const deathSaveHtml = ch.deathSaves
+      ? buildDeathSaveTrackerHtml(ch.deathSaves)
+      : '';
+
     return `
       <div class="char-mini-card" data-char-id="${ch.id}" title="Click to view full sheet">
         <div class="char-mini-top">
@@ -1055,6 +1139,7 @@ function renderCharPanel() {
           </div>
         </div>
         ${conditionHtml ? `<div class="condition-chips">${conditionHtml}</div>` : ''}
+        ${deathSaveHtml}
         <div class="char-gold">💰 ${ch.gold || 0} gp</div>
         ${buildSpellSlotPips(ch)}
       </div>
@@ -1073,9 +1158,32 @@ function renderCharPanel() {
   // NPC section — world characters encountered in this story
   renderNPCPanel();
 
+  // Quest journal
+  renderQuestPanel();
+
   // Update mobile toggle label with current counts
   const isOpen = document.getElementById('char-panel').classList.contains('open');
   updateMobileToggleLabel(isOpen);
+}
+
+function buildDeathSaveTrackerHtml(deathSaves) {
+  const { successes = 0, failures = 0 } = deathSaves;
+  const pip = (filled, type) =>
+    `<span class="death-save-pip ${filled ? type : 'empty'}">${filled ? (type === 'success' ? '✓' : '✗') : ''}</span>`;
+  const successPips = [0,1,2].map(i => pip(i < successes, 'success')).join('');
+  const failPips    = [0,1,2].map(i => pip(i < failures,  'fail')).join('');
+  return `
+    <div class="death-saves-tracker">
+      <div class="death-saves-label">💀 Death Saves</div>
+      <div class="death-saves-row">
+        <span style="font-family:var(--font-ui);font-size:0.6rem;color:var(--color-text-faint);min-width:26px;">Succ</span>
+        <div class="death-saves-pips">${successPips}</div>
+      </div>
+      <div class="death-saves-row" style="margin-top:3px;">
+        <span style="font-family:var(--font-ui);font-size:0.6rem;color:var(--color-text-faint);min-width:26px;">Fail</span>
+        <div class="death-saves-pips">${failPips}</div>
+      </div>
+    </div>`;
 }
 
 function buildNpcCardHtml(npc) {
@@ -1191,6 +1299,59 @@ function toggleKnownChars() {
     const sceneNpcIds = (activeStory?.scenes[activeStory?.currentSceneIndex]?.npcs) || [];
     renderKnownCharsPanel(sceneNpcIds);
   }
+}
+
+function renderQuestPanel() {
+  if (!activeStory) return;
+  const header    = document.getElementById('quest-panel-header');
+  const container = document.getElementById('quest-panel-cards');
+  const badge     = document.getElementById('quest-count-badge');
+  if (!header || !container) return;
+
+  const quests = activeStory.quests || [];
+  if (!quests.length) {
+    header.style.display = 'none';
+    container.style.display = 'none';
+    return;
+  }
+
+  const activeCount = quests.filter(q => q.status === 'active').length;
+  header.style.display = '';
+  if (badge) {
+    badge.className = 'quest-count-badge';
+    badge.textContent = activeCount > 0 ? `${activeCount} active` : 'done';
+  }
+
+  // Only render content when expanded
+  if (container.style.display !== 'none') {
+    container.innerHTML = quests.map(q => {
+      const statusClass = q.status === 'completed' ? 'quest-completed' : q.status === 'failed' ? 'quest-failed' : '';
+      const statusIcon  = q.status === 'completed' ? '✓' : q.status === 'failed' ? '✗' : '◆';
+      const objHtml = q.objectives.map(o =>
+        `<div class="quest-objective ${o.done ? 'done' : ''}">
+          <span class="quest-obj-icon">${o.done ? '✓' : '○'}</span>
+          <span>${escHtml(o.text)}</span>
+        </div>`
+      ).join('');
+      return `
+        <div class="quest-card ${statusClass}">
+          <div class="quest-title">${statusIcon} ${escHtml(q.title)}</div>
+          ${q.giver ? `<div class="quest-giver">From: ${escHtml(q.giver)}</div>` : ''}
+          ${objHtml}
+          ${q.reward ? `<div class="quest-reward">🏆 ${escHtml(q.reward)}</div>` : ''}
+        </div>`;
+    }).join('');
+  }
+}
+
+function toggleQuestPanel() {
+  const container = document.getElementById('quest-panel-cards');
+  const toggle    = document.getElementById('quest-panel-toggle');
+  if (!container || !toggle) return;
+  const isOpen = container.style.display !== 'none';
+  container.style.display = isOpen ? 'none' : '';
+  toggle.textContent = isOpen ? '▶' : '▼';
+  if (!isOpen) renderQuestPanel();
 }
 
 // ── Chat history rendering ────────────────────────────────────
@@ -1718,6 +1879,33 @@ function openSlideover(charId) {
       <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:var(--radius);padding:0.35rem 0.75rem;">💰 <strong>${char.gold} gp</strong></div>
       <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:var(--radius);padding:0.35rem 0.75rem;">✨ <strong>${char.xp} xp</strong></div>
     </div>
+
+    ${char.deathSaves ? `
+      <div style="margin-bottom:1rem;padding:0.75rem 1rem;background:rgba(180,30,30,0.12);border:1px solid rgba(200,50,50,0.35);border-radius:var(--radius);">
+        <div style="font-family:var(--font-display);font-size:0.75rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--color-danger);margin-bottom:0.6rem;">💀 Death Saving Throws</div>
+        <div style="display:flex;gap:2rem;font-family:var(--font-ui);font-size:0.8rem;">
+          <div>
+            <div style="color:var(--color-text-faint);font-size:0.68rem;margin-bottom:0.3rem;">Successes</div>
+            <div style="display:flex;gap:5px;">${[0,1,2].map(i =>
+              `<span style="width:18px;height:18px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:0.7rem;
+                background:${i < char.deathSaves.successes ? 'rgba(50,180,100,0.25)' : 'rgba(255,255,255,0.05)'};
+                border:1px solid ${i < char.deathSaves.successes ? 'rgba(50,200,100,0.6)' : 'rgba(255,255,255,0.15)'};
+                color:${i < char.deathSaves.successes ? '#3db868' : 'transparent'};">✓</span>`
+            ).join('')}</div>
+          </div>
+          <div>
+            <div style="color:var(--color-text-faint);font-size:0.68rem;margin-bottom:0.3rem;">Failures</div>
+            <div style="display:flex;gap:5px;">${[0,1,2].map(i =>
+              `<span style="width:18px;height:18px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:0.7rem;
+                background:${i < char.deathSaves.failures ? 'rgba(180,40,40,0.25)' : 'rgba(255,255,255,0.05)'};
+                border:1px solid ${i < char.deathSaves.failures ? 'rgba(220,60,60,0.6)' : 'rgba(255,255,255,0.15)'};
+                color:${i < char.deathSaves.failures ? '#e05050' : 'transparent'};">✗</span>`
+            ).join('')}</div>
+          </div>
+        </div>
+        <div style="font-family:var(--font-ui);font-size:0.7rem;color:var(--color-text-faint);margin-top:0.5rem;">3 successes = stable · 3 failures = death</div>
+      </div>
+    ` : ''}
 
     ${char.conditions.length ? `
       <div style="margin-bottom:1rem;">

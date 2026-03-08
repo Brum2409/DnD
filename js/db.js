@@ -108,6 +108,20 @@
  * @property {string[]} loot         - item IDs
  * @property {number|null} completedAt
  *
+ * @typedef {Object} QuestObjective
+ * @property {string} text
+ * @property {boolean} done
+ *
+ * @typedef {Object} Quest
+ * @property {string} id
+ * @property {string} title
+ * @property {string} description
+ * @property {string} [giver]        - NPC name who gave the quest
+ * @property {'active'|'completed'|'failed'} status
+ * @property {QuestObjective[]} objectives
+ * @property {string} [reward]       - Description of the reward
+ * @property {number} createdAt
+ *
  * @typedef {Object} Story
  * @property {string} id
  * @property {string} title
@@ -120,6 +134,7 @@
  * @property {Message[]} dmChatHistory
  * @property {'active'|'completed'|'paused'} status
  * @property {string} sceneImageUrl
+ * @property {Quest[]} [quests]       - Quest journal for this story
  * @property {number} createdAt
  * @property {number} updatedAt
  */

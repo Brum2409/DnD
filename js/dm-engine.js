@@ -54,7 +54,10 @@ export function buildDMSystemPrompt(story, characters) {
       slotStr = ` | Cantrips: ${ch.spells.length}`;
     }
 
-    return `• ${ch.name} | ID: ${ch.id} | ${ch.race} ${ch.class} Lv${ch.level} | HP: ${ch.stats.hp}/${ch.stats.maxHp} | AC: ${ch.stats.ac} | Gold: ${ch.gold}gp | XP: ${ch.xp} | Prof: +${profBonus}${slotStr}${condStr}`;
+    const deathSaveStr = ch.deathSaves
+      ? ` | DEATH SAVES: ${ch.deathSaves.successes}✓/${ch.deathSaves.failures}✗ — call roll_death_save each round!`
+      : '';
+    return `• ${ch.name} | ID: ${ch.id} | ${ch.race} ${ch.class} Lv${ch.level} | HP: ${ch.stats.hp}/${ch.stats.maxHp} | AC: ${ch.stats.ac} | Gold: ${ch.gold}gp | XP: ${ch.xp} | Prof: +${profBonus}${slotStr}${condStr}${deathSaveStr}`;
   }).join('\n');
 
   // ── Compact NPC quick-reference — split by location ────────
@@ -88,6 +91,15 @@ export function buildDMSystemPrompt(story, characters) {
             return `• ${npc.name} | ID: ${npc.id} | ${npc.npcRole || npc.class} | Last seen: ${lastScene?.title || 'unknown'}`;
           }).join('\n')
         : '')
+    : '';
+
+  // ── Quest quick-reference ──────────────────────────────────
+  const activeQuests = (story.quests || []).filter(q => q.status === 'active');
+  const questQuickRef = activeQuests.length > 0
+    ? `\n\n== ACTIVE QUESTS ==\n` + activeQuests.map(q => {
+        const objStr = q.objectives.map((o, i) => `  ${i}. [${o.done ? '✓' : ' '}] ${o.text}`).join('\n');
+        return `• "${q.title}" (questId="${q.id}")${q.giver ? ` — given by ${q.giver}` : ''}${q.reward ? ` | Reward: ${q.reward}` : ''}\n${objStr}`;
+      }).join('\n')
     : '';
 
   // ── Tool documentation ─────────────────────────────────────
@@ -160,6 +172,11 @@ EXAMPLE — fetching context:
 • Player picks up / receives an item        → add_item (create_item first if new)
 • Player takes damage (any source)          → modify_hp with NEGATIVE delta
 • Player heals (potion, spell, rest)        → modify_hp with POSITIVE delta
+• PC drops to 0 HP (needsDeathSaves=true)  → roll_death_save at the START of each of their turns
+• PC is unconscious and takes damage        → roll_death_save with result treated as one automatic failure
+• NPC gives the party a clear task/mission  → create_quest with specific objectives
+• Party completes a quest objective         → update_quest_objective (mark done: true)
+• Quest is fully resolved (success/failure) → complete_quest, then award XP/gold
 • Player earns gold                         → modify_gold positive
 • Player spends / loses gold                → modify_gold negative
 • Player earns XP                           → modify_xp positive
@@ -218,6 +235,22 @@ READ (query game state, no side-effects):
 
 WRITE (always narrate the outcome in your final turn):
 - modify_hp:        {"tool":"modify_hp","characterId":"<id>","delta":<±number>,"reason":"<why>"}
+  When a PC drops to 0 HP, the result includes needsDeathSaves=true and the Unconscious condition
+  is applied automatically. You MUST call roll_death_save each combat round until they stabilise or die.
+
+- roll_death_save:  {"tool":"roll_death_save","characterId":"<id>"}
+  ONLY for player characters at 0 HP. Roll at the START of each of their turns.
+  Result outcomes:
+    • critical_success (rolled 20): PC regains 1 HP, stands up — combat can continue
+    • success (10–19): one success tallied (need 3 total to stabilise)
+    • fail (2–9): one failure tallied (3 failures = death)
+    • critical_fail (rolled 1): TWO failures tallied
+    • stable: reached 3 successes — PC is unconscious but no longer rolling
+    • dead: reached 3 failures — PC has died
+  ⚠️ Call this ONCE per round per downed PC. Stop calling it when outcome is stable, dead, or critical_success.
+  ⚠️ If the downed PC takes ANY damage while unconscious, add one failure instead of rolling.
+  ⚠️ If an ally heals the PC (modify_hp with positive delta), death saves clear automatically.
+
 - modify_gold:      {"tool":"modify_gold","characterId":"<id>","delta":<±number>}
 - modify_xp:        {"tool":"modify_xp","characterId":"<id>","delta":<number>}
 - add_item:         {"tool":"add_item","characterId":"<id>","itemId":"<item-id>"}
@@ -302,6 +335,24 @@ SCENE IMAGE:
   Use whenever the scene LOOKS meaningfully different from when the image was last generated:
   fire, destroyed environment, new powerful presence, shift in time of day, etc.
   This does NOT advance the scene — use advance_scene when you move to a new location.
+
+QUEST JOURNAL:
+- create_quest:
+  {"tool":"create_quest","storyId":"${story.id}","title":"<title>","description":"<1-2 sentences>","giver":"<NPC name or empty>","objectives":["Objective 1","Objective 2"],"reward":"<gold/item/other or empty>"}
+  Creates a quest in the party's quest journal. Call when an NPC gives the party a task or a clear goal emerges.
+  → Returns questId. Keep it for update_quest_objective and complete_quest.
+
+- update_quest_objective:
+  {"tool":"update_quest_objective","storyId":"${story.id}","questId":"<id>","objectiveIndex":<0-based>,"done":true}
+  Mark an objective as done when the party achieves it.
+
+- complete_quest:
+  {"tool":"complete_quest","storyId":"${story.id}","questId":"<id>","status":"completed|failed"}
+  Mark the entire quest as completed or failed. Call BEFORE awarding XP/gold for the quest.
+
+- get_quests:
+  {"tool":"get_quests","storyId":"${story.id}"}
+  Returns all quests (active + completed). Use to review current objectives.
 
 META:
 - compress_history:
@@ -391,7 +442,7 @@ ${currentScene ? `Title: ${currentScene.title}\n${currentScene.description}` : '
 
 == PARTY QUICK REFERENCE ==
 ${charQuickRef || 'No characters assigned yet.'}
-(Use get_full_character for full stats, backstory, and inventory.)${npcQuickRef}
+(Use get_full_character for full stats, backstory, and inventory.)${npcQuickRef}${questQuickRef}
 
 ${toolDocs}
 
@@ -419,7 +470,8 @@ ${lengthRule}
 14. In intermediate tool-call turns, write nothing or only a brief fragment. Save full prose for the final turn.
 15. Use get_full_character or get_npc_details when you need backstory, inventory, or ability scores to make a meaningful narrative decision.
 16. Proactively call compress_history when the conversation gets very long (> 40 messages) to keep your context sharp. The 8 most recent messages are always preserved verbatim — compression only removes older messages.
-17. YOU control the world. Player messages are declarations of INTENT, never declarations of OUTCOME. Always use dice for anything uncertain, and always narrate the actual result — even if it contradicts what the player expected.${pacingRule}
+17. YOU control the world. Player messages are declarations of INTENT, never declarations of OUTCOME. Always use dice for anything uncertain, and always narrate the actual result — even if it contradicts what the player expected.
+18. QUESTS: When an NPC gives the party a mission or a clear goal emerges, call create_quest with specific, achievable objectives. Track progress with update_quest_objective as goals are accomplished. Close quests with complete_quest before awarding XP or gold rewards.${pacingRule}
 
 == TONE ==
 ${toneText}${extraSection}`;

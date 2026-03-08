@@ -19,10 +19,11 @@
  *  READ    get_character_stats, get_full_character, get_character_inventory,
  *          get_character_stat, get_npc_details, get_adventure_log,
  *          get_scene_history
- *  WRITE   modify_hp, modify_gold, modify_xp, add_item, remove_item,
+ *  WRITE   modify_hp, roll_death_save, modify_gold, modify_xp, add_item, remove_item,
  *          add_condition, remove_condition, log_event, advance_scene,
  *          create_item, set_npc_stat
  *  NPC     introduce_npc, npc_speak
+ *  QUEST   create_quest, update_quest_objective, complete_quest, get_quests
  *  META    compress_history
  */
 
@@ -236,12 +237,110 @@ export const DM_TOOLS = {
       }
     }
 
+    // When a PLAYER CHARACTER drops to 0 HP, begin death saving throws (5e rule).
+    // NPCs/enemies just die immediately — death saves are a PC-only mechanic.
+    let needsDeathSaves = false;
+    if (isDead && !char.isNPC) {
+      if (!char.conditions.includes('Unconscious')) {
+        char.conditions.push('Unconscious');
+      }
+      if (!char.deathSaves) {
+        char.deathSaves = { successes: 0, failures: 0 };
+      }
+      needsDeathSaves = true;
+      db.saveCharacter(char);
+    }
+
+    // If a PC is healed above 0 HP, clear death saves and unconscious state
+    if (!isDead && !char.isNPC && char.deathSaves) {
+      char.deathSaves = null;
+      char.conditions = char.conditions.filter(c => c !== 'Unconscious' && c !== 'Stable');
+      db.saveCharacter(char);
+    }
+
     return {
       newHp:  char.stats.hp,
       maxHp:  char.stats.maxHp,
       delta:  params.delta,
       isDead,
+      needsDeathSaves,
       reason: params.reason || '',
+    };
+  },
+
+  /**
+   * Roll a death saving throw for a downed player character (5e rules).
+   * 1       = two failures (critical fail)
+   * 2–9     = one failure
+   * 10–19   = one success
+   * 20      = character regains 1 HP and stabilises (critical success)
+   * Three successes → stable (conscious at 0 HP, no longer rolling)
+   * Three failures  → character dies
+   */
+  roll_death_save(params) {
+    const char = db.getCharacter(params.characterId);
+    if (!char) return { error: 'Character not found' };
+    if (char.isNPC) return { error: 'Death saves are only for player characters' };
+    if (char.stats.hp > 0) return { error: 'Character is not downed (HP > 0)' };
+
+    // Ensure deathSaves exists
+    if (!char.deathSaves) char.deathSaves = { successes: 0, failures: 0 };
+
+    const roll = Math.floor(Math.random() * 20) + 1;
+    let successes = char.deathSaves.successes;
+    let failures  = char.deathSaves.failures;
+    let outcome   = '';
+
+    if (roll === 20) {
+      // Miraculous recovery — regain 1 HP
+      char.stats.hp = 1;
+      char.deathSaves = null;
+      char.conditions = char.conditions.filter(c => c !== 'Unconscious' && c !== 'Stable');
+      outcome = 'critical_success';
+    } else if (roll === 1) {
+      // Critical fail — two failures
+      failures = Math.min(3, failures + 2);
+      outcome = 'critical_fail';
+    } else if (roll >= 10) {
+      successes = Math.min(3, successes + 1);
+      outcome = 'success';
+    } else {
+      failures = Math.min(3, failures + 1);
+      outcome = 'fail';
+    }
+
+    let isDead   = false;
+    let isStable = false;
+
+    if (outcome !== 'critical_success') {
+      if (failures >= 3) {
+        isDead = true;
+        char.conditions = char.conditions.filter(c => c !== 'Unconscious');
+        char.conditions.push('Dead');
+        char.deathSaves = { successes, failures };
+        outcome = 'dead';
+      } else if (successes >= 3) {
+        isStable = true;
+        char.conditions = char.conditions.filter(c => c !== 'Unconscious');
+        char.conditions.push('Stable');
+        char.deathSaves = { successes, failures };
+        outcome = 'stable';
+      } else {
+        char.deathSaves = { successes, failures };
+      }
+    }
+
+    db.saveCharacter(char);
+
+    return {
+      roll,
+      outcome,
+      successes: char.deathSaves?.successes ?? successes,
+      failures:  char.deathSaves?.failures  ?? failures,
+      isDead,
+      isStable,
+      newHp: char.stats.hp,
+      charName: char.name,
     };
   },
 
@@ -840,6 +939,87 @@ ${transcript.slice(0, 10000)}`,
       summary,
     };
   },
+
+  // ─── QUEST tools ───────────────────────────────────────────
+
+  /**
+   * Create a new quest in the story's quest journal.
+   * objectives is an array of strings (each string becomes one objective).
+   */
+  create_quest(params) {
+    const story = db.getStory(params.storyId);
+    if (!story) return { error: 'Story not found' };
+
+    if (!story.quests) story.quests = [];
+
+    const quest = {
+      id:          uuid(),
+      title:       params.title || 'Untitled Quest',
+      description: params.description || '',
+      giver:       params.giver || '',
+      status:      'active',
+      objectives:  (params.objectives || []).map(text => ({ text, done: false })),
+      reward:      params.reward || '',
+      createdAt:   Date.now(),
+    };
+
+    story.quests.push(quest);
+    db.saveStory(story);
+
+    return { questId: quest.id, quest };
+  },
+
+  /**
+   * Mark a single quest objective as done or not done.
+   * objectiveIndex is 0-based.
+   */
+  update_quest_objective(params) {
+    const story = db.getStory(params.storyId);
+    if (!story) return { error: 'Story not found' };
+
+    const quest = (story.quests || []).find(q => q.id === params.questId);
+    if (!quest) return { error: `Quest not found: ${params.questId}` };
+
+    const obj = quest.objectives[params.objectiveIndex];
+    if (!obj) return { error: `Objective index out of range: ${params.objectiveIndex}` };
+
+    obj.done = !!params.done;
+    db.saveStory(story);
+
+    return {
+      questId:         quest.id,
+      questTitle:      quest.title,
+      objectiveIndex:  params.objectiveIndex,
+      objectiveText:   obj.text,
+      done:            obj.done,
+      allObjectives:   quest.objectives,
+    };
+  },
+
+  /**
+   * Mark a quest as completed or failed and optionally award XP/gold to all party members.
+   */
+  complete_quest(params) {
+    const story = db.getStory(params.storyId);
+    if (!story) return { error: 'Story not found' };
+
+    const quest = (story.quests || []).find(q => q.id === params.questId);
+    if (!quest) return { error: `Quest not found: ${params.questId}` };
+
+    quest.status = params.status === 'failed' ? 'failed' : 'completed';
+    db.saveStory(story);
+
+    return { questId: quest.id, questTitle: quest.title, status: quest.status };
+  },
+
+  /**
+   * Return all quests for a story (active and completed).
+   */
+  get_quests(params) {
+    const story = db.getStory(params.storyId);
+    if (!story) return { error: 'Story not found' };
+    return { quests: story.quests || [] };
+  },
 };
 
 // ── Agentic re-prompt formatter ───────────────────────────────
@@ -891,7 +1071,16 @@ export function formatToolResultsForRePrompt(toolResults) {
       case 'remove_npc_from_scene':
         return `✅ remove_npc_from_scene: "${result.npcName}" removed from current scene (still a known character for future scenes)`;
       case 'modify_hp':
-        return `✅ modify_hp: HP updated → ${result.newHp}/${result.maxHp}${result.isDead ? ' — CHARACTER IS DOWN (0 HP)' : ''}`;
+        return `✅ modify_hp: HP updated → ${result.newHp}/${result.maxHp}${result.isDead ? ` — PC IS DOWN (0 HP)${result.needsDeathSaves ? ' — DEATH SAVES ACTIVE: call roll_death_save each round until stable or dead' : ''}` : ''}`;
+      case 'roll_death_save': {
+        const icons = `${result.successes}✓ / ${result.failures}✗`;
+        if (result.outcome === 'dead')             return `💀 roll_death_save(${result.charName}): rolled ${result.roll} — THREE FAILURES — ${result.charName} has DIED`;
+        if (result.outcome === 'stable')           return `💚 roll_death_save(${result.charName}): rolled ${result.roll} — THREE SUCCESSES — ${result.charName} is now STABLE`;
+        if (result.outcome === 'critical_success') return `⭐ roll_death_save(${result.charName}): rolled 20! — MIRACULOUS RECOVERY — ${result.charName} regains 1 HP and stands!`;
+        if (result.outcome === 'critical_fail')    return `💀 roll_death_save(${result.charName}): rolled 1! — CRITICAL FAIL — two failures added (${icons})`;
+        if (result.outcome === 'success')          return `✅ roll_death_save(${result.charName}): rolled ${result.roll} — SUCCESS (${icons})`;
+        return `❌ roll_death_save(${result.charName}): rolled ${result.roll} — FAIL (${icons})`;
+      }
       case 'modify_gold':
         return `✅ modify_gold: Gold → ${result.newGold} gp (${result.delta >= 0 ? '+' : ''}${result.delta})`;
       case 'modify_xp':
@@ -938,6 +1127,20 @@ export function formatToolResultsForRePrompt(toolResults) {
         return `✅ log_event: Adventure log updated`;
       case 'compress_history':
         return `✅ compress_history: ${result.compressedCount} older messages compressed into adventure summary; the ${result.keptCount} most recent messages are kept verbatim. Continue from this fresh context.`;
+      case 'create_quest': {
+        const objs = (result.quest?.objectives || []).map((o, i) => `${i}. ${o.text}`).join(' | ');
+        return `✅ create_quest: Quest "${result.quest?.title}" created (questId="${result.questId}") — Objectives: ${objs || 'none'}`;
+      }
+      case 'update_quest_objective':
+        return `✅ update_quest_objective: "${result.objectiveText}" → ${result.done ? 'DONE ✓' : 'not done'} (Quest: ${result.questTitle})`;
+      case 'complete_quest':
+        return `✅ complete_quest: Quest "${result.questTitle}" marked as ${result.status.toUpperCase()}`;
+      case 'get_quests': {
+        const quests = result.quests || [];
+        const active = quests.filter(q => q.status === 'active').map(q => `"${q.title}"`).join(', ');
+        const done   = quests.filter(q => q.status !== 'active').length;
+        return `ℹ️ Quests — Active: ${active || 'none'} | Completed/Failed: ${done}`;
+      }
       default:
         return `✅ ${tool}: ${JSON.stringify(result).slice(0, 120)}`;
     }
@@ -1053,10 +1256,20 @@ export function toolResultSummary(tool, params, result) {
       const name   = charName();
       const amount = Math.abs(params.delta);
       const hpStr  = `${result.newHp}/${result.maxHp} HP`;
+      if (result.isDead && result.needsDeathSaves) return `💀 ${name} is down! Death saving throws begin…`;
       if (result.isDead) return `💀 ${name} has fallen to 0 HP!`;
       return params.delta < 0
         ? `⚔️ ${name} takes ${amount} damage (${hpStr})${params.reason ? ' — ' + params.reason : ''}`
         : `❤️ ${name} heals ${amount} HP (${hpStr})`;
+    }
+    case 'roll_death_save': {
+      const name = result.charName || charName();
+      if (result.outcome === 'dead')             return `💀 ${name}: Death Save — rolled ${result.roll} — DIED (3 failures)`;
+      if (result.outcome === 'stable')           return `💚 ${name}: Death Save — rolled ${result.roll} — STABLE (3 successes)`;
+      if (result.outcome === 'critical_success') return `⭐ ${name}: Death Save — rolled 20! — Miraculous recovery! Regains 1 HP`;
+      if (result.outcome === 'critical_fail')    return `💀 ${name}: Death Save — rolled 1! — Two failures (${result.successes}✓ ${result.failures}✗)`;
+      if (result.outcome === 'success')          return `✅ ${name}: Death Save — rolled ${result.roll} — success (${result.successes}✓ ${result.failures}✗)`;
+      return `❌ ${name}: Death Save — rolled ${result.roll} — fail (${result.successes}✓ ${result.failures}✗)`;
     }
     case 'modify_gold': {
       const name = charName();
@@ -1114,6 +1327,14 @@ export function toolResultSummary(tool, params, result) {
       return ''; // NPC speech renders as its own bubble
     case 'compress_history':
       return `📜 History compressed (${result.compressedCount} messages → summary, ${result.keptCount} recent kept)`;
+    case 'create_quest':
+      return `📋 New quest: ${result.quest?.title || params.title}`;
+    case 'update_quest_objective':
+      return `📋 Quest objective ${result.done ? 'completed' : 'updated'}: ${result.objectiveText || ''}`;
+    case 'complete_quest':
+      return `📋 Quest ${result.status}: ${result.questTitle || params.questId}`;
+    case 'get_quests':
+      return '';
     // Read tools produce no visible badge — they're internal DM actions
     case 'get_character_stats':
     case 'get_full_character':

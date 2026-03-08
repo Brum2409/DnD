@@ -65,7 +65,7 @@
       transition: background var(--transition);
     }
     .log-entry:last-child { border-bottom: none; }
-    .log-entry:hover { background: rgba(255,255,255,0.025); }
+    .log-entry:hover { background: rgba(201, 168, 76, 0.04); }
 
     /* Hero CTA button pair */
     .hero-cta {
@@ -73,6 +73,11 @@
       gap: 1rem;
       justify-content: center;
       flex-wrap: wrap;
+    }
+
+    @media (max-width: 480px) {
+      .hero-cta { flex-direction: column; align-items: center; }
+      .hero-cta .btn { width: 100%; max-width: 280px; justify-content: center; }
     }
 
     /* Scroll hint */
@@ -156,6 +161,9 @@
     <li><a href="item-library.html"             >📦 Items</a></li>
     <li><a href="game.html"                     >⚔️ Play</a></li>
   </ul>
+  <div class="nav-drawer-footer">
+    <button class="btn btn-ghost btn-sm w-full" id="drawer-settings-btn" style="justify-content:flex-start;">⚙️ Settings</button>
+  </div>
 </div>
 <div class="nav-drawer-overlay" id="nav-overlay"></div>
 

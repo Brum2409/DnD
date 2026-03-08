@@ -17,12 +17,24 @@
     .char-sidebar-item {
       display: flex; align-items: center; gap: 0.6rem;
       padding: 0.65rem 0.75rem;
-      border: 1px solid var(--color-border); border-radius: var(--radius);
+      border: 1px solid rgba(255,255,255,0.08); border-radius: var(--radius);
       cursor: pointer; transition: all var(--transition);
-      background: var(--color-surface-2); position: relative;
+      background: rgba(14, 12, 22, 0.60);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      position: relative;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.28);
     }
-    .char-sidebar-item:hover  { border-color: var(--color-primary-dark); }
-    .char-sidebar-item.active { border-color: var(--color-primary); background: var(--color-primary-glow); }
+    .char-sidebar-item:hover  {
+      border-color: rgba(201,168,76,0.28);
+      background: rgba(201,168,76,0.07);
+      transform: translateX(2px);
+    }
+    .char-sidebar-item.active {
+      border-color: rgba(201,168,76,0.45);
+      background: rgba(201,168,76,0.10);
+      box-shadow: 0 0 16px rgba(201,168,76,0.15);
+    }
     .char-sidebar-portrait {
       width: 44px; height: 44px; border-radius: 50%; flex-shrink: 0;
       overflow: hidden; background: var(--color-surface-3);
@@ -51,13 +63,15 @@
       gap: 0.85rem;
     }
     .item-card {
-      background: var(--color-surface);
-      border: 1px solid var(--color-border);
+      background: rgba(14, 12, 22, 0.55);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.08);
       border-radius: var(--radius-lg); overflow: hidden;
       display: flex; flex-direction: column;
       transition: all var(--transition); cursor: default;
     }
-    .item-card:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+    .item-card:hover { transform: translateY(-2px); box-shadow: 0 6px 24px rgba(0,0,0,0.45); }
     .item-card[data-rarity="uncommon"] { border-color: var(--rarity-uncommon); box-shadow: 0 0 8px rgba(68,204,102,0.12); }
     .item-card[data-rarity="rare"]     { border-color: var(--rarity-rare);     box-shadow: 0 0 12px rgba(68,136,255,0.18); }
     .item-card[data-rarity="legendary"]{ border-color: var(--rarity-legendary);box-shadow: 0 0 18px rgba(255,153,0,0.28); }
@@ -79,10 +93,15 @@
     }
     .skill-row {
       display: flex; align-items: center; gap: 0.6rem;
-      padding: 0.45rem 0.65rem; background: var(--color-surface-2);
-      border: 1px solid var(--color-border); border-radius: var(--radius);
+      padding: 0.45rem 0.65rem;
+      background: rgba(14, 12, 22, 0.55);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,255,255,0.07); border-radius: var(--radius);
+      transition: all var(--transition);
     }
-    .skill-row:has(input:checked) { border-color: var(--color-primary-dark); background: var(--color-primary-glow); }
+    .skill-row:hover { border-color: rgba(255,255,255,0.12); background: rgba(20,16,30,0.65); }
+    .skill-row:has(input:checked) { border-color: rgba(201,168,76,0.35); background: rgba(201,168,76,0.08); }
     .skill-name  { flex: 1; font-family: var(--font-ui); font-size: 0.8rem; cursor: pointer; }
     .skill-ability { font-family: var(--font-ui); font-size: 0.67rem; color: var(--color-text-faint); }
     .skill-mod   { font-family: var(--font-display); font-size: 0.88rem; font-weight: 700; min-width: 28px; text-align: right; }
@@ -90,8 +109,10 @@
     /* ── Item detail modal icon ── */
     .idet-icon-box {
       width: 128px; height: 128px; border-radius: var(--radius);
-      overflow: hidden; background: var(--color-surface-2);
-      border: 1px solid var(--color-border);
+      overflow: hidden;
+      background: rgba(14, 12, 22, 0.60);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(201,168,76,0.18);
       display: flex; align-items: center; justify-content: center;
     }
     .idet-icon-box img { width: 100%; height: 100%; object-fit: cover; }
@@ -116,33 +137,38 @@
     .search-result-list { display: flex; flex-direction: column; gap: 0.3rem; max-height: 220px; overflow-y: auto; }
     .search-result-row {
       display: flex; align-items: center; gap: 0.75rem; padding: 0.4rem 0.6rem;
-      background: var(--color-surface-2); border: 1px solid var(--color-border);
+      background: rgba(14, 12, 22, 0.55);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,255,255,0.08);
       border-radius: var(--radius);
+      transition: all var(--transition);
+    }
+    .search-result-row:hover { background: rgba(201,168,76,0.07); border-color: rgba(201,168,76,0.25); }
+
+    /* ── Item card actions strip ── */
+    .item-card-actions {
+      background: rgba(0,0,0,0.2);
+      border-top: 1px solid rgba(255,255,255,0.06);
     }
 
     @media (max-width: 640px) {
       .inv-grid { grid-template-columns: repeat(2, 1fr); }
+      .skills-grid { grid-template-columns: 1fr; }
     }
 
     /* Mobile: split layout adjustments */
     @media (max-width: 900px) {
       /* Sidebar becomes a horizontal card scroller */
       .split-sidebar {
-        max-height: 220px;
-        overflow-x: auto;
-        overflow-y: hidden;
-        -webkit-overflow-scrolling: touch;
-      }
-      .split-sidebar-list {
-        flex-direction: row;
-        flex-wrap: nowrap;
-        overflow-x: auto;
-        overflow-y: hidden;
-        padding-bottom: 0.5rem;
+        max-height: 190px;
       }
       .char-sidebar-item {
-        min-width: 160px;
+        min-width: 165px;
         flex-shrink: 0;
+      }
+      .char-sidebar-item:hover {
+        transform: translateY(-1px);
       }
     }
   </style>
@@ -173,6 +199,9 @@
     <li><a href="item-library.html"     >📦 Items</a></li>
     <li><a href="game.html"             >⚔️ Play</a></li>
   </ul>
+  <div class="nav-drawer-footer">
+    <button class="btn btn-ghost btn-sm w-full" id="drawer-settings-btn" style="justify-content:flex-start;">⚙️ Settings</button>
+  </div>
 </div>
 <div class="nav-drawer-overlay" id="nav-overlay"></div>
 

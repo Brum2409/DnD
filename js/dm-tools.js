@@ -23,6 +23,9 @@
  *          add_condition, remove_condition, log_event, advance_scene,
  *          create_item, set_npc_stat
  *  NPC     introduce_npc, npc_speak
+ *  COMBAT  enter_combat, end_combat, next_turn,
+ *          use_action, use_bonus_action, use_reaction, use_movement,
+ *          action_surge, remove_from_combat, set_initiative, get_combat_state
  *  QUEST   create_quest, update_quest_objective, complete_quest, get_quests
  *  META    compress_history
  */
@@ -221,19 +224,35 @@ export const DM_TOOLS = {
     // When an NPC/enemy dies, move them from scene.npcs[] to scene.deadNpcs[].
     // They stay in deadNpcs so the DM retains context for looting, death narration,
     // and any post-combat interactions with the body.
-    if (isDead && char.isNPC) {
+    // Also mark them as dead in the active combat initiative order.
+    if (isDead) {
       const allStories = db.getAllStories();
       for (const story of allStories) {
-        const currentScene = story.scenes[story.currentSceneIndex];
-        if (currentScene?.npcs?.includes(char.id)) {
-          currentScene.npcs = currentScene.npcs.filter(id => id !== char.id);
-          if (!currentScene.deadNpcs) currentScene.deadNpcs = [];
-          if (!currentScene.deadNpcs.includes(char.id)) {
-            currentScene.deadNpcs.push(char.id);
+        let storyChanged = false;
+
+        // Remove dead NPC from scene npcs / add to deadNpcs
+        if (char.isNPC) {
+          const currentScene = story.scenes[story.currentSceneIndex];
+          if (currentScene?.npcs?.includes(char.id)) {
+            currentScene.npcs = currentScene.npcs.filter(id => id !== char.id);
+            if (!currentScene.deadNpcs) currentScene.deadNpcs = [];
+            if (!currentScene.deadNpcs.includes(char.id)) {
+              currentScene.deadNpcs.push(char.id);
+            }
+            storyChanged = true;
           }
-          db.saveStory(story);
-          break;
         }
+
+        // Auto-mark the combatant as isAlive=false in the initiative order
+        if (story.combat?.active) {
+          const combatEntry = story.combat.initiativeOrder.find(e => e.characterId === char.id);
+          if (combatEntry && combatEntry.isAlive) {
+            combatEntry.isAlive = false;
+            storyChanged = true;
+          }
+        }
+
+        if (storyChanged) db.saveStory(story);
       }
     }
 
@@ -940,6 +959,414 @@ ${transcript.slice(0, 10000)}`,
     };
   },
 
+  // ─── COMBAT tools ──────────────────────────────────────────
+
+  /**
+   * Start a combat encounter. Rolls initiative (1d20 + DEX mod) for all
+   * participants, sorts them into initiative order, and stores the state
+   * inside story.combat.
+   *
+   * All PCs in story.characterIds are included automatically.
+   * NPCs/enemies must be listed explicitly via params.npcIds.
+   *
+   * params:
+   *   storyId             {string}   — required
+   *   npcIds              {string[]} — IDs of NPCs/enemies joining combat
+   *   initiativeOverrides {Object}   — { characterId: initiativeTotal } to skip rolling
+   */
+  enter_combat(params) {
+    const story = db.getStory(params.storyId);
+    if (!story) return { error: 'Story not found' };
+    if (story.combat?.active) return { error: 'Combat already active. Call end_combat first.' };
+
+    const pcIds     = story.characterIds  || [];
+    const npcIds    = params.npcIds       || [];
+    const allIds    = [...new Set([...pcIds, ...npcIds])];
+    const overrides = params.initiativeOverrides || {};
+
+    const entries = [];
+    for (const id of allIds) {
+      const char = db.getCharacter(id);
+      if (!char) continue;
+      if (char.stats.hp <= 0) continue; // skip already-dead characters
+
+      const dexMod  = Math.floor(((char.stats.dexterity || 10) - 10) / 2);
+      const roll    = (id in overrides)
+        ? Number(overrides[id])
+        : Math.floor(Math.random() * 20) + 1 + dexMod;
+      const moveMax = char.stats.speed || char.movementSpeed || 30;
+
+      entries.push({
+        characterId:       id,
+        name:              char.name,
+        isNPC:             char.isNPC || false,
+        initiative:        roll,
+        hasAction:         true,
+        hasBonusAction:    true,
+        hasReaction:       true,
+        hasExtraAction:    false,
+        movementRemaining: moveMax,
+        movementMax:       moveMax,
+        isAlive:           true,
+      });
+    }
+
+    // Sort by initiative desc; tiebreak by DEX score desc
+    entries.sort((a, b) => {
+      if (b.initiative !== a.initiative) return b.initiative - a.initiative;
+      const ca = db.getCharacter(a.characterId);
+      const cb = db.getCharacter(b.characterId);
+      return ((cb?.stats?.dexterity || 10) - (ca?.stats?.dexterity || 10));
+    });
+
+    story.combat = {
+      active:           true,
+      round:            1,
+      initiativeOrder:  entries,
+      currentTurnIndex: 0,
+      startedAt:        Date.now(),
+    };
+    db.saveStory(story);
+
+    return {
+      message:         'Combat started!',
+      round:           1,
+      currentTurn:     entries[0]?.name || '—',
+      initiativeOrder: entries.map((e, i) => ({
+        position:   i + 1,
+        name:       e.name,
+        initiative: e.initiative,
+        isNPC:      e.isNPC,
+        isCurrent:  i === 0,
+      })),
+    };
+  },
+
+  /**
+   * End the combat encounter and clear all combat state.
+   * Call when: all enemies are defeated, party flees, or combat is otherwise resolved.
+   */
+  end_combat(params) {
+    const story = db.getStory(params.storyId);
+    if (!story) return { error: 'Story not found' };
+    if (!story.combat?.active) return { error: 'No active combat to end.' };
+
+    story.combat = null;
+    db.saveStory(story);
+    return { message: 'Combat ended. All combatants return to normal activity.' };
+  },
+
+  /**
+   * Advance to the next combatant in the initiative order.
+   * Resets the incoming combatant's Action, Bonus Action, and movement.
+   * Reactions reset for ALL when the round counter increments.
+   *
+   * Call this AFTER the current combatant has fully resolved their turn.
+   */
+  next_turn(params) {
+    const story = db.getStory(params.storyId);
+    if (!story) return { error: 'Story not found' };
+    if (!story.combat?.active) return { error: 'No active combat.' };
+
+    const combat = story.combat;
+    const order  = combat.initiativeOrder;
+    const total  = order.length;
+
+    // Advance index, skipping dead/removed combatants
+    let nextIdx = (combat.currentTurnIndex + 1) % total;
+    let guard   = 0;
+    while (!order[nextIdx].isAlive && guard < total) {
+      nextIdx = (nextIdx + 1) % total;
+      guard++;
+    }
+    if (guard >= total) return { error: 'No alive combatants remain. Call end_combat.' };
+
+    // Detect round wrap-around (we looped past the end of the order)
+    const newRound = nextIdx <= combat.currentTurnIndex;
+    if (newRound) {
+      combat.round++;
+      // Restore reactions for every living combatant at the top of a new round
+      for (const entry of order) {
+        if (entry.isAlive) entry.hasReaction = true;
+      }
+    }
+
+    combat.currentTurnIndex = nextIdx;
+    const current = order[nextIdx];
+
+    // Reset action economy for the incoming combatant
+    current.hasAction      = true;
+    current.hasBonusAction = true;
+    current.hasExtraAction = false;
+
+    // Sync movement to the character's current speed
+    const char    = db.getCharacter(current.characterId);
+    const moveMax = char?.stats?.speed || char?.movementSpeed || 30;
+    current.movementRemaining = moveMax;
+    current.movementMax       = moveMax;
+
+    db.saveStory(story);
+
+    return {
+      round:       combat.round,
+      currentTurn: current.name,
+      characterId: current.characterId,
+      isNPC:       current.isNPC,
+      newRound,
+      actions: {
+        hasAction:         current.hasAction,
+        hasBonusAction:    current.hasBonusAction,
+        hasReaction:       current.hasReaction,
+        movementRemaining: current.movementRemaining,
+      },
+    };
+  },
+
+  /**
+   * Mark the current combatant's Action as used.
+   * If Action Surge is active (hasExtraAction=true), the extra action is
+   * consumed first; the base action is preserved for that iteration.
+   *
+   * Call BEFORE narrating the result of any action
+   * (Attack, Cast Spell, Dash, Disengage, Dodge, Help, Hide, Ready, etc.).
+   * For Extra Attack: call use_action ONCE for the full Attack action,
+   * not once per individual attack roll.
+   */
+  use_action(params) {
+    const story = db.getStory(params.storyId);
+    if (!story?.combat?.active) return { error: 'No active combat.' };
+
+    const entry = story.combat.initiativeOrder.find(e => e.characterId === params.characterId);
+    if (!entry) return { error: 'Combatant not found in initiative order.' };
+    if (!entry.hasAction && !entry.hasExtraAction) {
+      return { error: `${entry.name} has no actions remaining this turn.` };
+    }
+
+    if (entry.hasExtraAction) {
+      entry.hasExtraAction = false; // burn extra action (Action Surge) first
+    } else {
+      entry.hasAction = false;
+    }
+
+    db.saveStory(story);
+    return {
+      name:           entry.name,
+      hasAction:      entry.hasAction,
+      hasExtraAction: entry.hasExtraAction,
+      hasBonusAction: entry.hasBonusAction,
+    };
+  },
+
+  /**
+   * Mark the current combatant's Bonus Action as used.
+   * Bonus actions are ONLY available when a class feature or spell explicitly
+   * grants one (e.g. off-hand TWF attack, Misty Step, Cunning Action, Wild Shape,
+   * Bardic Inspiration, Second Wind for some builds, etc.).
+   * You cannot "save" a bonus action for later — if unused, it is simply lost.
+   */
+  use_bonus_action(params) {
+    const story = db.getStory(params.storyId);
+    if (!story?.combat?.active) return { error: 'No active combat.' };
+
+    const entry = story.combat.initiativeOrder.find(e => e.characterId === params.characterId);
+    if (!entry) return { error: 'Combatant not found in initiative order.' };
+    if (!entry.hasBonusAction) {
+      return { error: `${entry.name} has already used their bonus action this turn.` };
+    }
+
+    entry.hasBonusAction = false;
+    db.saveStory(story);
+    return { name: entry.name, hasAction: entry.hasAction, hasBonusAction: entry.hasBonusAction };
+  },
+
+  /**
+   * Mark a combatant's Reaction as used.
+   * Reactions reset at the START of each new round — NOT each turn.
+   * A reaction can be triggered on ANY combatant's turn (not just your own).
+   * Examples: Opportunity Attack, Shield spell, Counterspell, Uncanny Dodge,
+   *           Hellish Rebuke, Absorb Elements, Parry (Battle Master).
+   */
+  use_reaction(params) {
+    const story = db.getStory(params.storyId);
+    if (!story?.combat?.active) return { error: 'No active combat.' };
+
+    const entry = story.combat.initiativeOrder.find(e => e.characterId === params.characterId);
+    if (!entry) return { error: 'Combatant not found in initiative order.' };
+    if (!entry.hasReaction) {
+      return { error: `${entry.name} has already used their reaction this round.` };
+    }
+
+    entry.hasReaction = false;
+    db.saveStory(story);
+    return {
+      name:        entry.name,
+      hasReaction: entry.hasReaction,
+      note:        'Reaction restores at the start of the next round.',
+    };
+  },
+
+  /**
+   * Track movement used by a combatant this turn (in feet).
+   * Movement can be split: some before the action and some after.
+   * Full movement speed is restored at the start of each of their turns.
+   * Difficult terrain costs 2ft of movement per 1ft moved.
+   *
+   * params: { storyId, characterId, feet }
+   */
+  use_movement(params) {
+    const story = db.getStory(params.storyId);
+    if (!story?.combat?.active) return { error: 'No active combat.' };
+
+    const entry = story.combat.initiativeOrder.find(e => e.characterId === params.characterId);
+    if (!entry) return { error: 'Combatant not found in initiative order.' };
+
+    const feet = Number(params.feet) || 5;
+    if (feet > entry.movementRemaining) {
+      return {
+        error:             `Not enough movement. ${entry.name} only has ${entry.movementRemaining}ft remaining this turn.`,
+        movementRemaining: entry.movementRemaining,
+      };
+    }
+
+    entry.movementRemaining -= feet;
+    db.saveStory(story);
+    return {
+      name:              entry.name,
+      feetUsed:          feet,
+      movementRemaining: entry.movementRemaining,
+      movementMax:       entry.movementMax,
+    };
+  },
+
+  /**
+   * Trigger a Fighter's Action Surge — grants ONE additional Action this turn.
+   * Per 5e rules: usable once per short or long rest (twice at Fighter level 17+).
+   * The DM must verify the character is a Fighter with this feature available.
+   * Cannot be granted if hasExtraAction is already true.
+   */
+  action_surge(params) {
+    const story = db.getStory(params.storyId);
+    if (!story?.combat?.active) return { error: 'No active combat.' };
+
+    const entry = story.combat.initiativeOrder.find(e => e.characterId === params.characterId);
+    if (!entry) return { error: 'Combatant not found in initiative order.' };
+    if (entry.hasExtraAction) {
+      return { error: `${entry.name} already has an extra action queued this turn.` };
+    }
+
+    entry.hasExtraAction = true;
+    db.saveStory(story);
+    return {
+      name:           entry.name,
+      message:        `Action Surge! ${entry.name} gains an extra action this turn.`,
+      hasAction:      entry.hasAction,
+      hasExtraAction: entry.hasExtraAction,
+    };
+  },
+
+  /**
+   * Remove a combatant from the initiative order permanently.
+   * Use for: permanent fleeing from the battlefield, petrification that
+   * removes them from the fight, or extraordinary circumstances.
+   * Death is handled automatically by modify_hp — do NOT call this for death.
+   *
+   * Reports whether one side has been fully eliminated (suggests end_combat).
+   */
+  remove_from_combat(params) {
+    const story = db.getStory(params.storyId);
+    if (!story?.combat?.active) return { error: 'No active combat.' };
+
+    const entry = story.combat.initiativeOrder.find(e => e.characterId === params.characterId);
+    if (!entry) return { error: 'Combatant not found in initiative order.' };
+
+    entry.isAlive = false;
+    db.saveStory(story);
+
+    const alive    = story.combat.initiativeOrder.filter(e => e.isAlive);
+    const aliveNPC = alive.filter(e =>  e.isNPC).length;
+    const alivePC  = alive.filter(e => !e.isNPC).length;
+
+    return {
+      removed:    entry.name,
+      aliveNPCs:  aliveNPC,
+      alivePCs:   alivePC,
+      suggestion: aliveNPC === 0
+        ? 'All enemies defeated! Consider calling end_combat.'
+        : alivePC === 0
+        ? 'All PCs are out! Consider calling end_combat.'
+        : null,
+    };
+  },
+
+  /**
+   * Override a combatant's initiative value and re-sort the full order.
+   * Useful for: surprise rounds, readied actions, special class features,
+   * or DM adjustment. The turn pointer is updated to still reference the
+   * same combatant after the re-sort.
+   */
+  set_initiative(params) {
+    const story = db.getStory(params.storyId);
+    if (!story?.combat?.active) return { error: 'No active combat.' };
+
+    const entry = story.combat.initiativeOrder.find(e => e.characterId === params.characterId);
+    if (!entry) return { error: 'Combatant not found in initiative order.' };
+
+    const currentCombatant = story.combat.initiativeOrder[story.combat.currentTurnIndex];
+    entry.initiative = Number(params.initiative);
+
+    story.combat.initiativeOrder.sort((a, b) => b.initiative - a.initiative);
+    story.combat.currentTurnIndex = story.combat.initiativeOrder
+      .findIndex(e => e.characterId === currentCombatant.characterId);
+
+    db.saveStory(story);
+    return {
+      name:         entry.name,
+      newInitiative: params.initiative,
+      newPosition:  story.combat.initiativeOrder.findIndex(e => e.characterId === params.characterId) + 1,
+    };
+  },
+
+  /**
+   * Return the full current combat state — initiative order, action economy,
+   * HP, AC, conditions, and round number.
+   * Use to orient yourself before narrating a complex multi-target turn,
+   * or whenever you need to confirm who acts next and what resources are left.
+   */
+  get_combat_state(params) {
+    const story = db.getStory(params.storyId);
+    if (!story) return { error: 'Story not found' };
+    if (!story.combat?.active) return { active: false, message: 'No active combat.' };
+
+    const combat = story.combat;
+    return {
+      active:           true,
+      round:            combat.round,
+      currentTurnIndex: combat.currentTurnIndex,
+      currentCombatant: combat.initiativeOrder[combat.currentTurnIndex]?.name,
+      initiativeOrder:  combat.initiativeOrder.map((e, i) => {
+        const char = db.getCharacter(e.characterId);
+        return {
+          position:          i + 1,
+          name:              e.name,
+          initiative:        e.initiative,
+          isNPC:             e.isNPC,
+          isCurrent:         i === combat.currentTurnIndex,
+          isAlive:           e.isAlive,
+          hp:                char?.stats?.hp    ?? '?',
+          maxHp:             char?.stats?.maxHp ?? '?',
+          ac:                char?.stats?.ac    ?? '?',
+          conditions:        char?.conditions    || [],
+          hasAction:         e.hasAction,
+          hasBonusAction:    e.hasBonusAction,
+          hasReaction:       e.hasReaction,
+          hasExtraAction:    e.hasExtraAction   || false,
+          movementRemaining: e.movementRemaining,
+          movementMax:       e.movementMax,
+        };
+      }),
+    };
+  },
+
   // ─── QUEST tools ───────────────────────────────────────────
 
   /**
@@ -1141,6 +1568,40 @@ export function formatToolResultsForRePrompt(toolResults) {
         const done   = quests.filter(q => q.status !== 'active').length;
         return `ℹ️ Quests — Active: ${active || 'none'} | Completed/Failed: ${done}`;
       }
+      // ── COMBAT ────────────────────────────────────────────────
+      case 'enter_combat': {
+        const order = (result.initiativeOrder || [])
+          .map(e => `${e.position}. ${e.name} (Init:${e.initiative})${e.isCurrent ? ' ◄' : ''}`)
+          .join(', ');
+        return `⚔️ enter_combat: COMBAT STARTED — Round 1 | Initiative: ${order} | First to act: ${result.currentTurn}`;
+      }
+      case 'end_combat':
+        return `✅ end_combat: ${result.message}`;
+      case 'next_turn': {
+        const newRoundNote = result.newRound ? ` — ⏰ NEW ROUND ${result.round} (reactions restored for all)` : '';
+        return `▶ next_turn: Now acting — ${result.currentTurn} (Round ${result.round})${newRoundNote}`;
+      }
+      case 'use_action':
+        return `✅ use_action: ${result.name} — Action used${result.hasExtraAction ? ' (Action Surge still available)' : ''}. Bonus: ${result.hasBonusAction ? '✓' : '✗'}`;
+      case 'use_bonus_action':
+        return `✅ use_bonus_action: ${result.name} — Bonus Action used. Action: ${result.hasAction ? '✓' : '✗'}`;
+      case 'use_reaction':
+        return `✅ use_reaction: ${result.name} — Reaction used. Restores next round.`;
+      case 'use_movement':
+        return `✅ use_movement: ${result.name} moved ${result.feetUsed}ft (${result.movementRemaining}ft remaining of ${result.movementMax}ft)`;
+      case 'action_surge':
+        return `⚡ action_surge: ${result.message}`;
+      case 'remove_from_combat':
+        return `🚪 remove_from_combat: ${result.removed} removed from combat${result.suggestion ? ` — ${result.suggestion}` : ''}`;
+      case 'set_initiative':
+        return `✅ set_initiative: ${result.name} new initiative ${result.newInitiative} (position ${result.newPosition})`;
+      case 'get_combat_state': {
+        if (!result.active) return `ℹ️ get_combat_state: No active combat`;
+        const order = (result.initiativeOrder || [])
+          .map(e => `${e.position}. ${e.name} HP:${e.hp}/${e.maxHp} AC:${e.ac}${e.isCurrent ? ' ◄ACTIVE' : ''}${!e.isAlive ? ' ☠' : ''}`)
+          .join(' | ');
+        return `ℹ️ get_combat_state: Round ${result.round} | Acting: ${result.currentCombatant} | Order: ${order}`;
+      }
       default:
         return `✅ ${tool}: ${JSON.stringify(result).slice(0, 120)}`;
     }
@@ -1335,6 +1796,31 @@ export function toolResultSummary(tool, params, result) {
       return `📋 Quest ${result.status}: ${result.questTitle || params.questId}`;
     case 'get_quests':
       return '';
+    // ── COMBAT badges ─────────────────────────────────────────
+    case 'enter_combat':
+      return `⚔️ Combat begins! Round 1 — ${result.initiativeOrder?.length || 0} combatants`;
+    case 'end_combat':
+      return `🏁 Combat ended`;
+    case 'next_turn':
+      return result.newRound
+        ? `🔔 Round ${result.round} begins — ${result.currentTurn}'s turn`
+        : `▶ ${result.currentTurn}'s turn`;
+    case 'use_action':
+      return `⚡ ${result.name}: Action used`;
+    case 'use_bonus_action':
+      return `⚡ ${result.name}: Bonus Action used`;
+    case 'use_reaction':
+      return `⚡ ${result.name}: Reaction used`;
+    case 'use_movement':
+      return `🏃 ${result.name} moves ${result.feetUsed}ft (${result.movementRemaining}ft left)`;
+    case 'action_surge':
+      return `⚡ Action Surge! ${result.name} gets an extra action`;
+    case 'remove_from_combat':
+      return `🚪 ${result.removed} removed from combat`;
+    case 'set_initiative':
+      return `🎲 Initiative set: ${result.name} → ${result.newInitiative}`;
+    case 'get_combat_state':
+      return ''; // read-only, no badge
     // Read tools produce no visible badge — they're internal DM actions
     case 'get_character_stats':
     case 'get_full_character':

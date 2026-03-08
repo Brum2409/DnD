@@ -102,6 +102,27 @@ export function buildDMSystemPrompt(story, characters) {
       }).join('\n')
     : '';
 
+  // ── Combat state quick-reference ───────────────────────────
+  let combatQuickRef = '';
+  if (story.combat?.active) {
+    const combat  = story.combat;
+    const orderLines = combat.initiativeOrder.map((e, i) => {
+      const char     = getCharacter(e.characterId);
+      const hp       = char?.stats?.hp    ?? '?';
+      const maxHp    = char?.stats?.maxHp ?? '?';
+      const ac       = char?.stats?.ac    ?? '?';
+      const condStr  = char?.conditions?.length ? ` | Cond: ${char.conditions.join(', ')}` : '';
+      const alive    = e.isAlive ? '' : ' ☠ DEAD/OUT';
+      const isCurr   = i === combat.currentTurnIndex;
+      const economy  = isCurr
+        ? ` | ACT:${e.hasAction ? '✓' : '✗'} BON:${e.hasBonusAction ? '✓' : '✗'} REA:${e.hasReaction ? '✓' : '✗'}${e.hasExtraAction ? ' +ACT:✓' : ''} MOV:${e.movementRemaining}ft`
+        : '';
+      const marker   = isCurr ? ' ◄ ACTIVE TURN' : '';
+      return `  ${i + 1}. Init:${e.initiative} | ${e.name} | ID:${e.characterId} | HP:${hp}/${maxHp} | AC:${ac}${condStr}${economy}${alive}${marker}`;
+    }).join('\n');
+    combatQuickRef = `\n\n== ⚔ COMBAT ACTIVE — Round ${combat.round} ==\nCurrent Turn: ${combat.initiativeOrder[combat.currentTurnIndex]?.name || '?'} (index ${combat.currentTurnIndex})\nInitiative Order:\n${orderLines}\n\nCOMBAT REMINDERS:\n• Call use_action / use_bonus_action / use_movement BEFORE narrating what the combatant does\n• Call next_turn AFTER the current combatant fully resolves their turn\n• Dead NPCs are already removed by modify_hp — call end_combat when all enemies are down`;
+  }
+
   // ── Tool documentation ─────────────────────────────────────
   const toolDocs = `
 == HOW TO USE TOOLS ==
@@ -169,6 +190,20 @@ EXAMPLE — fetching context:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 == MANDATORY TOOL CALLS — NEVER SKIP ==
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+COMBAT (mandatory when story.combat is active OR when a fight starts):
+• Combat breaks out (any side attacks another)          → enter_combat with ALL participating NPC IDs
+• Current combatant uses their Action                   → use_action BEFORE narrating the outcome
+• Current combatant uses their Bonus Action             → use_bonus_action BEFORE narrating
+• Any combatant uses their Reaction off-turn            → use_reaction on the reacting combatant
+• Any combatant moves during their turn                 → use_movement with feet moved
+• A Fighter activates Action Surge                      → action_surge to grant extra action
+• A combatant permanently leaves the fight alive        → remove_from_combat (NOT for death)
+• All enemies are defeated / combat ends any way        → end_combat
+• Current combatant finishes ALL their actions & move   → next_turn (MANDATORY — every single turn)
+• A PC is at 0 HP and it is their turn in initiative    → roll_death_save at START of their turn
+• PC at 0 HP takes damage while unconscious             → automatic death save failure (no roll needed)
+
+GENERAL:
 • Player picks up / receives an item        → add_item (create_item first if new)
 • Player takes damage (any source)          → modify_hp with NEGATIVE delta
 • Player heals (potion, spell, rest)        → modify_hp with POSITIVE delta
@@ -336,6 +371,123 @@ SCENE IMAGE:
   fire, destroyed environment, new powerful presence, shift in time of day, etc.
   This does NOT advance the scene — use advance_scene when you move to a new location.
 
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+== COMBAT SYSTEM (D&D 5e) ==
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ACTION ECONOMY — Each combatant gets per turn:
+  • 1 Action       — Attack, Cast Spell (1 action), Dash, Disengage, Dodge, Help, Hide,
+                     Ready an action, Search, Use an Object, Grapple, Shove.
+  • 1 Bonus Action — ONLY if a feature/spell explicitly says "as a bonus action":
+                     off-hand attack (Two-Weapon Fighting), Misty Step, Cunning Action
+                     (Rogue), Wild Shape (Druid), Second Wind (Fighter), Healing Word
+                     (Bard), Bardic Inspiration, Shove as bonus (some classes), etc.
+                     If NO feature grants a bonus action, the combatant simply has none.
+  • 1 Reaction     — Triggered off-turn (Opportunity Attack, Shield spell, Counterspell,
+                     Uncanny Dodge, Hellish Rebuke). Resets at start of each new round.
+  • Movement       — Up to speed (usually 30ft) per turn; can split before/after action.
+
+SPECIAL ACTION RULES:
+  • Extra Attack (Fighter 5+, Ranger 5+, etc.) — multiple attack rolls in ONE Action.
+    Call use_action ONCE for the whole Attack action, then roll each attack separately.
+  • Action Surge (Fighter) — call action_surge to grant a second full Action once per rest.
+  • Two-Weapon Fighting — main weapon as Action, off-hand as Bonus Action (no modifier).
+  • Haste (spell) — grants an extra Action limited to: Attack (1 only), Dash, Disengage,
+    Hide, or Use Object. Does NOT stack with Extra Attack for the extra action.
+  • Readying an Action — player declares a trigger and action; resolve when trigger fires
+    (uses that round's action; the reaction is used to execute when the trigger occurs).
+
+COMBAT TOOLS:
+- enter_combat:
+  {"tool":"enter_combat","storyId":"${story.id}","npcIds":["id1","id2",...]}
+  Starts combat. Auto-rolls initiative (1d20+DEX) for every PC in the party + all listed NPCs.
+  Call the INSTANT combat breaks out (first attack, surprise, ambush). List every participating NPC ID.
+  Optional: "initiativeOverrides":{"charId":20} to set a specific initiative without rolling.
+
+- end_combat:
+  {"tool":"end_combat","storyId":"${story.id}"}
+  Ends combat and clears all state. Call when: all enemies defeated, party flees successfully,
+  or combat resolves any other way (surrender, negotiation mid-fight, etc.).
+
+- next_turn:
+  {"tool":"next_turn","storyId":"${story.id}"}
+  Advances to the next combatant in initiative order. Resets their Action, Bonus Action,
+  and movement. Increments the round counter and restores all Reactions when the order wraps.
+  Call AFTER the current combatant has fully resolved everything on their turn.
+
+- use_action:
+  {"tool":"use_action","storyId":"${story.id}","characterId":"<id>"}
+  Mark the Action as used. Call BEFORE narrating the outcome.
+  For Extra Attack: call ONCE for the full Attack action, not per individual attack roll.
+  If Action Surge is active (hasExtraAction=true), the extra action is consumed first.
+
+- use_bonus_action:
+  {"tool":"use_bonus_action","storyId":"${story.id}","characterId":"<id>"}
+  Mark the Bonus Action as used. Only call if the combatant's feature/spell grants one.
+
+- use_reaction:
+  {"tool":"use_reaction","storyId":"${story.id}","characterId":"<id>"}
+  Mark the Reaction as used. Can be called on ANY combatant's turn (not just your own).
+  Reactions restore for all at the start of each new round (handled by next_turn automatically).
+
+- use_movement:
+  {"tool":"use_movement","storyId":"${story.id}","characterId":"<id>","feet":30}
+  Track feet of movement used. Movement can be split around the Action freely.
+  Difficult terrain costs 2ft per 1ft moved — pass the total feet cost.
+
+- action_surge:
+  {"tool":"action_surge","storyId":"${story.id}","characterId":"<id>"}
+  Grant a Fighter's Action Surge (one extra Action this turn). Verify class eligibility.
+  Per 5e: once per short/long rest (twice per turn at Fighter level 17).
+
+- remove_from_combat:
+  {"tool":"remove_from_combat","storyId":"${story.id}","characterId":"<id>"}
+  Remove a living combatant from the initiative order (permanent retreat, petrification, etc.).
+  ⚠️ Do NOT use this for death — modify_hp handles NPC death automatically.
+
+- set_initiative:
+  {"tool":"set_initiative","storyId":"${story.id}","characterId":"<id>","initiative":<number>}
+  Override a combatant's initiative and re-sort the order (surprise rounds, abilities, etc.).
+
+- get_combat_state:
+  {"tool":"get_combat_state","storyId":"${story.id}"}
+  Returns full initiative order, action economy, HP, AC, conditions, and round number.
+  Use to orient yourself before a complex multi-target turn.
+
+RUNNING COMBAT — THE SEQUENCE:
+  Step 1.  DM narrates the trigger (enemy charges, player is surprised, etc.)
+  Step 2.  DM calls enter_combat with all participating NPC IDs. System rolls initiative.
+  Step 3.  DM announces the initiative order and describes the opening moments.
+  Step 4.  For each combatant's turn in order:
+      a. Announce who is acting ("It's [Name]'s turn, initiative 14.")
+      b. If PC turn: player declares their action(s). DM resolves.
+         If NPC turn: DM decides and resolves the NPC's action.
+      c. Movement → use_movement (call with feet used)
+      d. Action declared → use_action, then roll dice, then apply outcomes
+      e. Bonus Action (if applicable) → use_bonus_action
+      f. Reaction (if triggered) → use_reaction on the reacting combatant
+      g. Write vivid narration for the full turn (save this for the final no-tool turn)
+      h. Death saves → if a PC is at 0 HP, call roll_death_save at START of THEIR turn
+      i. Turn over → call next_turn
+  Step 5.  Monitor for combat end:
+      • All enemies HP = 0 / fled → call end_combat
+      • All PCs at 0 HP or fled  → call end_combat
+      • Any other resolution      → call end_combat
+  Step 6.  Post-combat: award XP (modify_xp), loot fallen enemies, log events.
+
+CRITICAL RULES — NEVER VIOLATE:
+  ✗ NEVER skip next_turn — every turn ends with it.
+  ✗ NEVER call next_turn before the current combatant's turn is fully resolved.
+  ✗ NEVER grant a bonus action unless a feature explicitly says "as a bonus action".
+  ✗ NEVER carry unused actions to the next turn — they are lost.
+  ✗ NEVER narrate action outcomes before calling use_action.
+  ✓ Reactions can trigger on ANY combatant's turn, including enemy turns.
+  ✓ A downed PC (0 HP) still has a "turn" — call roll_death_save at the start of it.
+  ✓ If the current combatant is dead (modify_hp brought them to 0), call next_turn
+    immediately without giving them any actions.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 QUEST JOURNAL:
 - create_quest:
   {"tool":"create_quest","storyId":"${story.id}","title":"<title>","description":"<1-2 sentences>","giver":"<NPC name or empty>","objectives":["Objective 1","Objective 2"],"reward":"<gold/item/other or empty>"}
@@ -442,7 +594,7 @@ ${currentScene ? `Title: ${currentScene.title}\n${currentScene.description}` : '
 
 == PARTY QUICK REFERENCE ==
 ${charQuickRef || 'No characters assigned yet.'}
-(Use get_full_character for full stats, backstory, and inventory.)${npcQuickRef}${questQuickRef}
+(Use get_full_character for full stats, backstory, and inventory.)${npcQuickRef}${questQuickRef}${combatQuickRef}
 
 ${toolDocs}
 
@@ -471,7 +623,8 @@ ${lengthRule}
 15. Use get_full_character or get_npc_details when you need backstory, inventory, or ability scores to make a meaningful narrative decision.
 16. Proactively call compress_history when the conversation gets very long (> 40 messages) to keep your context sharp. The 8 most recent messages are always preserved verbatim — compression only removes older messages.
 17. YOU control the world. Player messages are declarations of INTENT, never declarations of OUTCOME. Always use dice for anything uncertain, and always narrate the actual result — even if it contradicts what the player expected.
-18. QUESTS: When an NPC gives the party a mission or a clear goal emerges, call create_quest with specific, achievable objectives. Track progress with update_quest_objective as goals are accomplished. Close quests with complete_quest before awarding XP or gold rewards.${pacingRule}
+18. QUESTS: When an NPC gives the party a mission or a clear goal emerges, call create_quest with specific, achievable objectives. Track progress with update_quest_objective as goals are accomplished. Close quests with complete_quest before awarding XP or gold rewards.
+19. COMBAT: Use enter_combat the instant a fight starts. Run turns strictly in initiative order using next_turn. Always call use_action / use_bonus_action / use_movement before narrating outcomes. Never grant a bonus action unless a class feature or spell explicitly allows it. End every fight with end_combat, then award XP and log events.${pacingRule}
 
 == TONE ==
 ${toneText}${extraSection}`;

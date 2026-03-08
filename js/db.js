@@ -122,6 +122,26 @@
  * @property {string} [reward]       - Description of the reward
  * @property {number} createdAt
  *
+ * @typedef {Object} CombatantEntry
+ * @property {string}   characterId        - References a Character or NPC by ID
+ * @property {string}   name               - Display name
+ * @property {boolean}  isNPC              - true for NPCs/enemies, false for PCs
+ * @property {number}   initiative         - Rolled initiative value (1d20 + DEX mod)
+ * @property {boolean}  hasAction          - Action available this turn (reset each turn)
+ * @property {boolean}  hasBonusAction     - Bonus action available this turn (reset each turn)
+ * @property {boolean}  hasReaction        - Reaction available this round (reset each NEW ROUND)
+ * @property {boolean}  hasExtraAction     - Extra action from Action Surge (Fighter only)
+ * @property {number}   movementRemaining  - Feet of movement remaining this turn
+ * @property {number}   movementMax        - Base movement speed in feet
+ * @property {boolean}  isAlive            - false when killed or permanently removed from combat
+ *
+ * @typedef {Object} CombatState
+ * @property {boolean}          active            - Whether combat is currently ongoing
+ * @property {number}           round             - Current round number (starts at 1)
+ * @property {CombatantEntry[]} initiativeOrder   - All combatants sorted by initiative (desc)
+ * @property {number}           currentTurnIndex  - Index into initiativeOrder for whose turn it is
+ * @property {number}           startedAt         - Timestamp when combat began
+ *
  * @typedef {Object} Story
  * @property {string} id
  * @property {string} title
@@ -135,6 +155,7 @@
  * @property {'active'|'completed'|'paused'} status
  * @property {string} sceneImageUrl
  * @property {Quest[]} [quests]       - Quest journal for this story
+ * @property {CombatState|null} [combat] - Active combat state; null/undefined when not in combat
  * @property {number} createdAt
  * @property {number} updatedAt
  */

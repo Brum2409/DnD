@@ -477,8 +477,12 @@ RUNNING COMBAT — THE SEQUENCE:
   Step 3.  DM announces the initiative order and describes the opening moments.
   Step 4.  For each combatant's turn in order:
       a. Announce who is acting ("It's [Name]'s turn, initiative 14.")
-      b. If PC turn: player declares their action(s). DM resolves.
-         If NPC turn: DM decides and resolves the NPC's action.
+      b. ⚠️ PC TURN — MANDATORY STOP: If the active combatant is a player character,
+         STOP the agentic loop entirely. Do NOT call use_action, roll dice for them,
+         or narrate what they do. Write a brief combat status (round, HP totals, who
+         is threatening whom) and ask the player what they want to do. Do nothing else
+         until the player replies.
+         NPC TURN: DM decides and fully resolves the NPC's action using the tools below.
       c. Movement → use_movement (call with feet used)
       d. Action declared → use_action, then roll dice, then apply outcomes
       e. Bonus Action (if applicable) → use_bonus_action
@@ -498,6 +502,10 @@ CRITICAL RULES — NEVER VIOLATE:
   ✗ NEVER grant a bonus action unless a feature explicitly says "as a bonus action".
   ✗ NEVER carry unused actions to the next turn — they are lost.
   ✗ NEVER narrate action outcomes before calling use_action.
+  ✗ NEVER take any action on behalf of a PC (player character). If it is a PC's turn,
+    STOP immediately — do not call use_action, roll_dice for their attack, or narrate
+    what they do. Write a brief combat status summary (HP, round, who is active) and
+    ask the player to declare their action. Wait for their reply before doing anything.
   ✓ Reactions can trigger on ANY combatant's turn, including enemy turns.
   ✓ A downed PC (0 HP) still has a "turn" — call roll_death_save at the start of it.
   ✓ If the current combatant is dead (modify_hp brought them to 0), call next_turn
@@ -985,6 +993,9 @@ export async function sendDMMessage(storyId, userMessage, onProgress = null) {
           `[TOOL RESULTS]\n${formatToolResultsForRePrompt(iterationResults)}\n[/TOOL RESULTS]\n\n` +
           `Continue. Make additional tool calls if needed (e.g. roll damage after a hit, ` +
           `call add_item with the itemId from create_item, call npc_speak with the npcId from introduce_npc). ` +
+          `⚠️ COMBAT CHECK: If it is now a PLAYER CHARACTER'S turn (check the initiative order), ` +
+          `do NOT take any action for them. STOP all tool calls immediately, describe the current ` +
+          `combat situation briefly, and ask the player what they want to do. ` +
           `When you have no more tool calls, write your complete narrative for the player.`,
       }],
     });

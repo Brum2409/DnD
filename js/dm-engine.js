@@ -151,10 +151,12 @@ USE THIS TO:
 
 RULES:
 • NEVER invent dice results — always call roll_dice and wait for the real number
-• In tool-call turns, write brief setup text OR nothing at all
-• Write your full prose narrative ONLY in the final turn (the one with no tool calls)
-• Tool-call turns are invisible to the player — only the final narrative is shown
+• In tool-call turns, write NOTHING — no narrative, no prose, no story text whatsoever
+• Write your full prose narrative ONLY in the final turn (the one with NO tool calls)
+• The engine DISCARDS text from tool-call turns — only the final narrative reaches the player
 • You MAY make multiple tool calls in a single turn (they all run in parallel order)
+• ONE beat per response: set up ONE situation, then stop. Do not chain from one event
+  directly into the next without the player acting first.
 
 EXAMPLE — item pickup:
   Turn 1: create_item("Tarnished Dagger", "weapon", ...)
@@ -649,7 +651,8 @@ ${lengthRule}
 16. Proactively call compress_history when the conversation gets very long (> 40 messages) to keep your context sharp. The 8 most recent messages are always preserved verbatim — compression only removes older messages.
 17. YOU control the world. Player messages are declarations of INTENT, never declarations of OUTCOME. Always use dice for anything uncertain, and always narrate the actual result — even if it contradicts what the player expected.
 18. QUESTS: When an NPC gives the party a mission or a clear goal emerges, call create_quest with specific, achievable objectives. Track progress with update_quest_objective as goals are accomplished. Close quests with complete_quest before awarding XP or gold rewards.
-19. COMBAT: Use enter_combat the instant a fight starts. Run turns strictly in initiative order using next_turn. Always call use_action / use_bonus_action / use_movement before narrating outcomes. Never grant a bonus action unless a class feature or spell explicitly allows it. End every fight with end_combat, then award XP and log events.${pacingRule}
+19. COMBAT: Use enter_combat the instant a fight starts. Run turns strictly in initiative order using next_turn. Always call use_action / use_bonus_action / use_movement before narrating outcomes. Never grant a bonus action unless a class feature or spell explicitly allows it. End every fight with end_combat, then award XP and log events.
+20. ONE BEAT PER RESPONSE — NEVER self-progress: Each response must present exactly ONE completed situation and then stop. After setting a scene, describing the aftermath of combat, or introducing a new location — STOP and ask the player what they do next. Do NOT automatically chain into the next encounter, NPC appearance, or scene transition without player input. The player must always drive what happens next.${pacingRule}
 
 == TONE ==
 ${toneText}${extraSection}`;
@@ -920,12 +923,21 @@ export async function sendDMMessage(storyId, userMessage, onProgress = null) {
     const toolCalls     = parseDMToolCalls(rawResponse);
     const narrativePart = stripToolCalls(rawResponse).trim();
 
-    if (narrativePart) {
-      allNarrativeParts.push(narrativePart);
+    // If no tool calls this turn, the DM is done — collect the final narrative.
+    // IMPORTANT: narrative is ONLY collected here (final turn) to prevent the DM
+    // from chaining multiple story beats across iterations without player input.
+    // Intermediate tool-call turns must have no player-visible prose per the rules,
+    // so discarding their text at the engine level enforces that constraint.
+    if (toolCalls.length === 0) {
+      if (narrativePart) allNarrativeParts.push(narrativePart);
+      break;
     }
 
-    // If no tool calls this turn, the DM is done
-    if (toolCalls.length === 0) break;
+    // Tool-call iteration — do NOT collect narrative.
+    // Exception: last allowed iteration (safety fallback — surface whatever the DM wrote).
+    if (iteration === MAX_ITERATIONS - 1 && narrativePart) {
+      allNarrativeParts.push(narrativePart);
+    }
 
     // Notify UI of what the DM is about to do
     if (onProgress) {
@@ -975,8 +987,10 @@ export async function sendDMMessage(storyId, userMessage, onProgress = null) {
           parts: [{
             text:
               `[TOOL RESULTS]\n${formatToolResultsForRePrompt(iterationResults)}\n[/TOOL RESULTS]\n\n` +
-              `History compressed. Your context is now fresh. Continue with any remaining tool calls, ` +
-              `or write your final narrative for the player.`,
+              `History compressed. Your context is now fresh. Make any remaining chained tool calls only. ` +
+              `⚠️ Do NOT write narrative in this turn — save all prose for the final no-tool-call turn. ` +
+              `⚠️ COMBAT CHECK: If it is now a PC's turn, stop and ask the player what they want to do. ` +
+              `⚠️ STORY CHECK: One beat per response — do not chain into a new event or scene.`,
           }],
         });
       }
@@ -991,12 +1005,14 @@ export async function sendDMMessage(storyId, userMessage, onProgress = null) {
       parts: [{
         text:
           `[TOOL RESULTS]\n${formatToolResultsForRePrompt(iterationResults)}\n[/TOOL RESULTS]\n\n` +
-          `Continue. Make additional tool calls if needed (e.g. roll damage after a hit, ` +
-          `call add_item with the itemId from create_item, call npc_speak with the npcId from introduce_npc). ` +
-          `⚠️ COMBAT CHECK: If it is now a PLAYER CHARACTER'S turn (check the initiative order), ` +
-          `do NOT take any action for them. STOP all tool calls immediately, describe the current ` +
-          `combat situation briefly, and ask the player what they want to do. ` +
-          `When you have no more tool calls, write your complete narrative for the player.`,
+          `Make any remaining chained tool calls now (e.g. add_item with the itemId from create_item, ` +
+          `npc_speak with the npcId from introduce_npc, roll damage after a confirmed hit). ` +
+          `⚠️ DO NOT write any narrative or prose in this turn — this is a tool-call-only turn. ` +
+          `The engine discards all text from tool-call turns; only the final no-tool-call turn is shown to the player. ` +
+          `⚠️ COMBAT CHECK: If it is now a PLAYER CHARACTER'S turn, STOP all tool calls and write ` +
+          `your final narrative asking the player what they want to do. ` +
+          `⚠️ STORY CHECK: Do NOT chain into a new encounter, scene, or event — one beat per response. ` +
+          `When you have no more tool calls, write your ONE complete narrative for the player and stop.`,
       }],
     });
 

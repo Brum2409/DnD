@@ -228,7 +228,8 @@ COMBAT (mandatory when story.combat is active OR when a fight starts):
 • A Fighter activates Action Surge                      → action_surge to grant extra action
 • A combatant permanently leaves the fight alive        → remove_from_combat (NOT for death)
 • All enemies are defeated / combat ends any way        → end_combat
-• Current combatant finishes ALL their actions & move   → next_turn (MANDATORY — every single turn)
+• Current combatant used ALL actions (ACT=✗ BON=✗ +ACT=✗) → next_turn (MANDATORY — every turn)
+• Player/DM explicitly says "skip turn", "pass", "end turn" → skip_turn (forfeits remaining actions)
 • A PC is at 0 HP and it is their turn in initiative    → roll_death_save at START of their turn
 • PC at 0 HP takes damage while unconscious             → automatic death save failure (no roll needed)
 
@@ -454,7 +455,21 @@ COMBAT TOOLS:
   {"tool":"next_turn","storyId":"${story.id}"}
   Advances to the next combatant in initiative order. Resets their Action, Bonus Action,
   and movement. Increments the round counter and restores all Reactions when the order wraps.
-  Call AFTER the current combatant has fully resolved everything on their turn.
+  ⚠️ Only call next_turn when the current combatant has genuinely exhausted their turns —
+  i.e., hasAction=false AND hasExtraAction=false AND hasBonusAction=false (or there is
+  truly nothing useful left for them to do). If actions remain and the combatant wants
+  to skip, use skip_turn instead.
+
+- skip_turn:
+  {"tool":"skip_turn","storyId":"${story.id}","reason":"<why skipping>"}
+  Optional characterId (defaults to current active combatant):
+  {"tool":"skip_turn","storyId":"${story.id}","characterId":"<id>","reason":"<why>"}
+  Explicitly ends a combatant's turn even if they have Action, Bonus Action, or extra
+  actions remaining. Any unused actions are forfeited (lost — they do NOT carry over).
+  Use when:
+  • The PLAYER says "I skip my turn", "I pass", "I end my turn early", or similar
+  • An NPC tactically forfeits remaining actions
+  • The DM is manually skipping on behalf of the player
 
 - use_action:
   {"tool":"use_action","storyId":"${story.id}","characterId":"<id>"}
@@ -516,7 +531,11 @@ RUNNING COMBAT — THE SEQUENCE:
       f. Reaction (if triggered) → use_reaction on the reacting combatant
       g. Write vivid narration for the full turn (save this for the final no-tool turn)
       h. Death saves → if a PC is at 0 HP, call roll_death_save at START of THEIR turn
-      i. Turn over → call next_turn
+      i. Turn over: check the combatant's action economy (ACT/BON flags in COMBAT ACTIVE block):
+         — If hasAction=false AND hasExtraAction=false AND hasBonusAction=false → call next_turn
+         — If any actions remain AND combatant explicitly wants to skip → call skip_turn
+         — If any actions remain AND combatant can still act → DO NOT end the turn yet;
+           ask the player for another action (PC) or decide the NPC's next action
   Step 5.  Monitor for combat end:
       • All enemies HP = 0 / fled → call end_combat
       • All PCs at 0 HP or fled  → call end_combat
@@ -524,10 +543,13 @@ RUNNING COMBAT — THE SEQUENCE:
   Step 6.  Post-combat: award XP (modify_xp), loot fallen enemies, log events.
 
 CRITICAL RULES — NEVER VIOLATE:
-  ✗ NEVER skip next_turn — every turn ends with it.
-  ✗ NEVER call next_turn before the current combatant's turn is fully resolved.
+  ✗ NEVER skip next_turn or skip_turn — every turn must end with one of them.
+  ✗ NEVER call next_turn if the current combatant still has ACT=✓ or +ACT=✓ or BON=✓
+    AND they haven't explicitly chosen to end their turn. Let them act again first.
+  ✗ NEVER call next_turn instead of skip_turn when the player explicitly says "skip",
+    "pass", "end my turn", or similar — use skip_turn so the forfeit is logged.
   ✗ NEVER grant a bonus action unless a feature explicitly says "as a bonus action".
-  ✗ NEVER carry unused actions to the next turn — they are lost.
+  ✗ NEVER carry unused actions to the next turn — they are lost (use skip_turn to forfeit).
   ✗ NEVER narrate action outcomes before calling use_action.
   ✗ NEVER take any action on behalf of a PC (player character). If it is a PC's turn,
     STOP immediately — do not call use_action, roll_dice for their attack, or narrate
@@ -538,6 +560,8 @@ CRITICAL RULES — NEVER VIOLATE:
   ✗ NEVER state "it's [X]'s turn" unless the COMBAT ACTIVE block shows ◄ ACTIVE TURN by their name.
   ✗ NEVER call use_action / use_bonus_action / use_movement for a combatant not in the order.
     If an NPC is in the scene but missing from the initiative order, call add_to_combat first.
+  ✓ A PC or NPC with ACT=✓ and BON=✓ can use BOTH their action and bonus action in one turn.
+    Ask the player whether they also want to use a bonus action before ending their turn.
   ✓ Reactions can trigger on ANY combatant's turn, including enemy turns.
   ✓ A downed PC (0 HP) still has a "turn" — call roll_death_save at the start of it.
   ✓ If the current combatant is dead (modify_hp brought them to 0), call next_turn
@@ -840,6 +864,10 @@ function buildToolCallStatusMessage(toolCalls) {
       case 'next_turn': {
         const ch = tc.characterId ? getCharacter(tc.characterId) : null;
         return ch ? `⏭️ Ending ${ch.name}'s turn` : `⏭️ Advancing turn`;
+      }
+      case 'skip_turn': {
+        const ch = tc.characterId ? getCharacter(tc.characterId) : null;
+        return ch ? `⏭️ Skipping ${ch.name}'s turn` : `⏭️ Skipping turn`;
       }
       case 'use_action': {
         const ch = getCharacter(tc.characterId);

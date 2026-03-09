@@ -23,7 +23,7 @@
  *          add_condition, remove_condition, log_event, advance_scene,
  *          create_item, set_npc_stat
  *  NPC     introduce_npc, npc_speak
- *  COMBAT  enter_combat, end_combat, next_turn,
+ *  COMBAT  enter_combat, end_combat, next_turn, skip_turn,
  *          use_action, use_bonus_action, use_reaction, use_movement,
  *          action_surge, add_to_combat, remove_from_combat, set_initiative, get_combat_state
  *  QUEST   create_quest, update_quest_objective, complete_quest, get_quests
@@ -1190,7 +1190,15 @@ ${transcript.slice(0, 10000)}`,
    * Resets the incoming combatant's Action, Bonus Action, and movement.
    * Reactions reset for ALL when the round counter increments.
    *
-   * Call this AFTER the current combatant has fully resolved their turn.
+   * ⚠️ IMPORTANT: Only call next_turn when the current combatant has used ALL
+   * of their available actions (hasAction=false, hasExtraAction=false) AND
+   * their bonus action (hasBonusAction=false), OR when there is genuinely
+   * nothing more for them to do this turn.
+   *
+   * If the player/DM explicitly wants to end the turn while actions remain,
+   * use skip_turn instead — it signals intentional forfeiture.
+   *
+   * The result includes a `warning` field if unused actions are detected.
    */
   next_turn(params) {
     const story = db.getStory(params.storyId);
@@ -1200,6 +1208,15 @@ ${transcript.slice(0, 10000)}`,
     const combat = story.combat;
     const order  = combat.initiativeOrder;
     const total  = order.length;
+
+    // Check if the current combatant still has actions/bonus actions remaining
+    const prev = order[combat.currentTurnIndex];
+    const wasted = [];
+    if (prev?.isAlive) {
+      if (prev.hasAction)      wasted.push('action');
+      if (prev.hasExtraAction) wasted.push('extra action (Action Surge)');
+      if (prev.hasBonusAction) wasted.push('bonus action');
+    }
 
     // Advance index, skipping dead/removed combatants
     let nextIdx = (combat.currentTurnIndex + 1) % total;
@@ -1236,11 +1253,113 @@ ${transcript.slice(0, 10000)}`,
 
     db.saveStory(story);
 
-    return {
+    const result = {
       round:       combat.round,
       currentTurn: current.name,
       characterId: current.characterId,
       isNPC:       current.isNPC,
+      newRound,
+      actions: {
+        hasAction:         current.hasAction,
+        hasBonusAction:    current.hasBonusAction,
+        hasReaction:       current.hasReaction,
+        movementRemaining: current.movementRemaining,
+      },
+    };
+
+    if (wasted.length > 0) {
+      result.warning = `⚠️ ${prev.name} ended their turn with unused ${wasted.join(' + ')} remaining. If this was intentional, use skip_turn in future to signal deliberate forfeiture.`;
+    }
+
+    return result;
+  },
+
+  /**
+   * Explicitly skip (forfeit) the current combatant's turn even if they have
+   * actions or bonus actions remaining.
+   *
+   * Use this when:
+   *   • The player says "I skip my turn" / "I pass" / "I end my turn early"
+   *   • The DM decides an NPC forfeits its remaining actions (e.g. stunned resolve,
+   *     tactical retreat decision, incapacitated-but-alive condition)
+   *   • Any situation where deliberately ending a turn early is the intent
+   *
+   * params:
+   *   storyId     {string}  — required
+   *   characterId {string}  — optional; if omitted, skips the current active combatant
+   *   reason      {string}  — optional description of why the turn is being skipped
+   */
+  skip_turn(params) {
+    const story = db.getStory(params.storyId);
+    if (!story) return { error: 'Story not found' };
+    if (!story.combat?.active) return { error: 'No active combat.' };
+
+    const combat = story.combat;
+    const order  = combat.initiativeOrder;
+    const total  = order.length;
+
+    // Determine whose turn to skip
+    let skipIdx = combat.currentTurnIndex;
+    if (params.characterId) {
+      const idx = order.findIndex(e => e.characterId === params.characterId);
+      if (idx === -1) return { error: 'Combatant not found in initiative order.' };
+      skipIdx = idx;
+    }
+
+    const skipped = order[skipIdx];
+    if (!skipped.isAlive) return { error: `${skipped.name} is already dead/removed.` };
+
+    // Record what was forfeited for the result
+    const forfeited = [];
+    if (skipped.hasAction)      forfeited.push('action');
+    if (skipped.hasExtraAction) forfeited.push('extra action (Action Surge)');
+    if (skipped.hasBonusAction) forfeited.push('bonus action');
+
+    // Clear all action economy flags on the skipped combatant
+    skipped.hasAction      = false;
+    skipped.hasBonusAction = false;
+    skipped.hasExtraAction = false;
+
+    // Advance to the next living combatant
+    let nextIdx = (skipIdx + 1) % total;
+    let guard   = 0;
+    while (!order[nextIdx].isAlive && guard < total) {
+      nextIdx = (nextIdx + 1) % total;
+      guard++;
+    }
+    if (guard >= total) return { error: 'No alive combatants remain. Call end_combat.' };
+
+    const newRound = nextIdx <= skipIdx;
+    if (newRound) {
+      combat.round++;
+      for (const entry of order) {
+        if (entry.isAlive) entry.hasReaction = true;
+      }
+    }
+
+    combat.currentTurnIndex = nextIdx;
+    const current = order[nextIdx];
+
+    // Reset action economy for the incoming combatant
+    current.hasAction      = true;
+    current.hasBonusAction = true;
+    current.hasExtraAction = false;
+
+    const char    = db.getCharacter(current.characterId);
+    const moveMax = char?.stats?.speed || char?.movementSpeed || 30;
+    current.movementRemaining = moveMax;
+    current.movementMax       = moveMax;
+
+    db.saveStory(story);
+
+    return {
+      skippedName:    skipped.name,
+      forfeited:      forfeited.length > 0 ? forfeited : ['nothing (turn was already spent)'],
+      reason:         params.reason || 'Turn skipped by request',
+      round:          combat.round,
+      currentTurn:    current.name,
+      characterId:    current.characterId,
+      isNPC:          current.isNPC,
       newRound,
       actions: {
         hasAction:         current.hasAction,
@@ -1813,7 +1932,13 @@ export function formatToolResultsForRePrompt(toolResults) {
         return `✅ end_combat: ${result.message}`;
       case 'next_turn': {
         const newRoundNote = result.newRound ? ` — ⏰ NEW ROUND ${result.round} (reactions restored for all)` : '';
-        return `▶ next_turn: Now acting — ${result.currentTurn} (Round ${result.round})${newRoundNote}`;
+        const warnNote = result.warning ? `\n${result.warning}` : '';
+        return `▶ next_turn: Now acting — ${result.currentTurn} (Round ${result.round})${newRoundNote}${warnNote}`;
+      }
+      case 'skip_turn': {
+        const newRoundNote = result.newRound ? ` — ⏰ NEW ROUND ${result.round}` : '';
+        const forfeitNote  = result.forfeited?.length > 0 ? ` [forfeited: ${result.forfeited.join(', ')}]` : '';
+        return `⏭ skip_turn: ${result.skippedName} skipped${forfeitNote} — Now acting: ${result.currentTurn} (Round ${result.round})${newRoundNote}`;
       }
       case 'use_action':
         return `✅ use_action: ${result.name} — Action used${result.hasExtraAction ? ' (Action Surge still available)' : ''}. Bonus: ${result.hasBonusAction ? '✓' : '✗'}`;
@@ -2048,6 +2173,8 @@ export function toolResultSummary(tool, params, result) {
       return result.newRound
         ? `🔔 Round ${result.round} begins — ${result.currentTurn}'s turn`
         : `▶ ${result.currentTurn}'s turn`;
+    case 'skip_turn':
+      return `⏭ ${result.skippedName} skipped → ${result.currentTurn}'s turn`;
     case 'use_action':
       return `⚡ ${result.name}: Action used`;
     case 'use_bonus_action':

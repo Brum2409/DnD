@@ -48,12 +48,15 @@ export function loadSettings(serverSettings) {
 export async function saveSettings(patch) {
   Object.assign(_settings, patch);
   try {
-    await fetch('/api/settings', {
+    const resp = await fetch('/api/settings', {
       method: 'PUT',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(patch),
     });
+    if (!resp.ok) {
+      console.error(`[settings] Server rejected settings update: HTTP ${resp.status}`);
+    }
   } catch (err) {
     console.error('[settings] Failed to persist settings:', err);
   }

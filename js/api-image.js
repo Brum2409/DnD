@@ -262,11 +262,12 @@ function blobToBase64(blob) {
  * @param {string} url
  * @returns {Promise<boolean>}
  */
-export function checkImageUrl(url) {
+export function checkImageUrl(url, timeoutMs = 8000) {
   return new Promise(resolve => {
-    const img   = new Image();
-    img.onload  = () => resolve(true);
-    img.onerror = () => resolve(false);
+    const img     = new Image();
+    const timer   = setTimeout(() => { img.src = ''; resolve(false); }, timeoutMs);
+    img.onload  = () => { clearTimeout(timer); resolve(true); };
+    img.onerror = () => { clearTimeout(timer); resolve(false); };
     img.src     = url;
   });
 }

@@ -579,6 +579,7 @@ export const DM_TOOLS = {
       imagePrompt:  params.newSceneDescription || '',
       imageUrl:     '',
       npcs:         [],
+      deadNpcs:     [],
       loot:         [],
       completedAt:  null,
     };

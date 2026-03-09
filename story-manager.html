@@ -879,6 +879,7 @@ async function createCampaign() {
       imagePrompt,
       imageUrl: '',
       npcs: [],
+      deadNpcs: [],
       loot: [],
       completedAt: null,
     };
@@ -989,6 +990,7 @@ document.getElementById('add-scene-save').addEventListener('click', async () => 
     imagePrompt: buildImagePrompt(st.setting, desc),
     imageUrl: '',
     npcs: [],
+    deadNpcs: [],
     loot: [],
     completedAt: null,
   };

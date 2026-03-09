@@ -25,7 +25,7 @@
  *  NPC     introduce_npc, npc_speak
  *  COMBAT  enter_combat, end_combat, next_turn,
  *          use_action, use_bonus_action, use_reaction, use_movement,
- *          action_surge, remove_from_combat, set_initiative, get_combat_state
+ *          action_surge, add_to_combat, remove_from_combat, set_initiative, get_combat_state
  *  QUEST   create_quest, update_quest_objective, complete_quest, get_quests
  *  META    compress_history
  */
@@ -48,6 +48,56 @@ async function generateNPCPortraitAsync(npcId, prompt) {
   } catch (err) {
     console.warn('[dm-tools] NPC portrait generation failed:', err.message);
   }
+}
+
+// ── Combat helper ─────────────────────────────────────────────
+
+/**
+ * Add an NPC to an active combat initiative order, rolling initiative for them.
+ * Called automatically by introduce_npc (for enemy/boss/creature roles) and
+ * by enter_combat (for scene enemies not explicitly listed).
+ *
+ * @param {import('./db.js').Character} npc
+ * @param {string} storyId
+ * @param {number|null} [initiativeOverride] - use this value instead of rolling
+ * @returns {number|null} rolled/assigned initiative, or null if not joined
+ */
+function autoJoinCombat(npc, storyId, initiativeOverride = null) {
+  if (!storyId) return null;
+  const story = db.getStory(storyId);
+  if (!story?.combat?.active) return null;
+
+  // Already in the order?
+  if (story.combat.initiativeOrder.some(e => e.characterId === npc.id)) return null;
+
+  const dexMod    = Math.floor(((npc.stats?.dexterity || 10) - 10) / 2);
+  const initiative = initiativeOverride ?? (Math.floor(Math.random() * 20) + 1 + dexMod);
+  const moveMax   = npc.stats?.speed || npc.movementSpeed || 30;
+
+  story.combat.initiativeOrder.push({
+    characterId:       npc.id,
+    name:              npc.name,
+    isNPC:             true,
+    initiative,
+    hasAction:         true,
+    hasBonusAction:    true,
+    hasReaction:       true,
+    hasExtraAction:    false,
+    movementRemaining: moveMax,
+    movementMax:       moveMax,
+    isAlive:           true,
+  });
+
+  // Re-sort by initiative descending; tiebreak by DEX
+  story.combat.initiativeOrder.sort((a, b) => {
+    if (b.initiative !== a.initiative) return b.initiative - a.initiative;
+    const ca = db.getCharacter(a.characterId);
+    const cb = db.getCharacter(b.characterId);
+    return ((cb?.stats?.dexterity || 10) - (ca?.stats?.dexterity || 10));
+  });
+
+  db.saveStory(story);
+  return initiative;
 }
 
 // ── Tool definitions ──────────────────────────────────────────
@@ -603,11 +653,15 @@ export const DM_TOOLS = {
             db.saveCharacter(duplicate);
           }
         }
+        // Auto-join combat if it's active and this NPC is combat-relevant
+        const combatRoles = ['enemy', 'boss', 'creature'];
+        const joinedInitiative = combatRoles.includes(role) ? autoJoinCombat(duplicate, storyId) : null;
         return {
           npcId: duplicate.id,
           npc:   duplicate,
           reused: true,
           note:  `Existing character "${duplicate.name}" (ID: ${duplicate.id}) reused — no duplicate created.`,
+          ...(joinedInitiative !== null ? { autoJoinedCombat: true, initiative: joinedInitiative } : {}),
         };
       }
     }
@@ -668,7 +722,15 @@ export const DM_TOOLS = {
     const portraitPrompt = `${name}, ${race} ${role}, DND fantasy character portrait, ${appearance || 'dramatic lighting'}, detailed face, dark fantasy art, circular portrait, subject centered`;
     generateNPCPortraitAsync(npc.id, portraitPrompt);
 
-    return { npcId: npc.id, npc };
+    // Auto-join active combat if this NPC is a combat-relevant role
+    const combatRoles = ['enemy', 'boss', 'creature'];
+    const joinedInitiative = combatRoles.includes(role) ? autoJoinCombat(npc, storyId) : null;
+
+    return {
+      npcId: npc.id,
+      npc,
+      ...(joinedInitiative !== null ? { autoJoinedCombat: true, initiative: joinedInitiative } : {}),
+    };
   },
 
   /**
@@ -1027,9 +1089,27 @@ ${transcript.slice(0, 10000)}`,
     if (story.combat?.active) return { error: 'Combat already active. Call end_combat first.' };
 
     const pcIds     = story.characterIds  || [];
-    const npcIds    = params.npcIds       || [];
-    const allIds    = [...new Set([...pcIds, ...npcIds])];
+    const npcIds    = [...(params.npcIds  || [])];
     const overrides = params.initiativeOverrides || {};
+
+    // ── Auto-include any enemy/boss/creature NPCs already in the current scene
+    // that the DM forgot (or hadn't yet got IDs for) in their npcIds list.
+    // This is the #1 source of "combatant not found" errors.
+    const currentScene = story.scenes[story.currentSceneIndex];
+    const autoAddedNames = [];
+    if (currentScene?.npcs) {
+      for (const sceneNpcId of currentScene.npcs) {
+        if (!npcIds.includes(sceneNpcId)) {
+          const sceneNpc = db.getCharacter(sceneNpcId);
+          if (sceneNpc && ['enemy', 'boss', 'creature'].includes(sceneNpc.npcRole)) {
+            npcIds.push(sceneNpcId);
+            autoAddedNames.push(sceneNpc.name);
+          }
+        }
+      }
+    }
+
+    const allIds = [...new Set([...pcIds, ...npcIds])];
 
     const entries = [];
     for (const id of allIds) {
@@ -1087,6 +1167,7 @@ ${transcript.slice(0, 10000)}`,
         isNPC:      e.isNPC,
         isCurrent:  i === 0,
       })),
+      ...(autoAddedNames.length > 0 ? { autoAddedEnemies: autoAddedNames } : {}),
     };
   },
 
@@ -1347,6 +1428,79 @@ ${transcript.slice(0, 10000)}`,
   },
 
   /**
+   * Add a character or NPC to an already-active combat encounter.
+   * Use this when a new enemy joins mid-fight (reinforcements, ambush from stealth, etc.)
+   * or when you forgot to include an NPC in the original enter_combat call.
+   *
+   * Rolls initiative automatically (1d20 + DEX mod) unless you pass an override.
+   * The combatant is inserted in the correct sorted position.
+   *
+   * params:
+   *   storyId     {string}  — required
+   *   characterId {string}  — ID of the character/NPC to add
+   *   initiative  {number}  — optional override (skip roll)
+   */
+  add_to_combat(params) {
+    const story = db.getStory(params.storyId);
+    if (!story?.combat?.active) return { error: 'No active combat. Call enter_combat first.' };
+
+    const char = db.getCharacter(params.characterId);
+    if (!char) return { error: 'Character not found.' };
+
+    const alreadyIn = story.combat.initiativeOrder.some(e => e.characterId === params.characterId);
+    if (alreadyIn) return { error: `${char.name} is already in the initiative order.` };
+
+    // Skip dead NPCs (they have nothing to add)
+    if (char.stats.hp <= 0 && (char.isNPC || char.conditions?.includes('Dead'))) {
+      return { error: `${char.name} is already dead and cannot join combat.` };
+    }
+
+    const dexMod    = Math.floor(((char.stats?.dexterity || 10) - 10) / 2);
+    const initiative = params.initiative != null
+      ? Number(params.initiative)
+      : Math.floor(Math.random() * 20) + 1 + dexMod;
+    const moveMax   = char.stats?.speed || char.movementSpeed || 30;
+
+    const entry = {
+      characterId:       params.characterId,
+      name:              char.name,
+      isNPC:             char.isNPC || false,
+      initiative,
+      hasAction:         true,
+      hasBonusAction:    true,
+      hasReaction:       true,
+      hasExtraAction:    false,
+      movementRemaining: moveMax,
+      movementMax:       moveMax,
+      isAlive:           true,
+    };
+
+    story.combat.initiativeOrder.push(entry);
+
+    // Re-sort by initiative descending; tiebreak by DEX
+    const currentCombatant = story.combat.initiativeOrder[story.combat.currentTurnIndex];
+    story.combat.initiativeOrder.sort((a, b) => {
+      if (b.initiative !== a.initiative) return b.initiative - a.initiative;
+      const ca = db.getCharacter(a.characterId);
+      const cb = db.getCharacter(b.characterId);
+      return ((cb?.stats?.dexterity || 10) - (ca?.stats?.dexterity || 10));
+    });
+    // Keep currentTurnIndex pointing at the same combatant after re-sort
+    story.combat.currentTurnIndex = story.combat.initiativeOrder
+      .findIndex(e => e.characterId === currentCombatant.characterId);
+
+    db.saveStory(story);
+
+    const newPosition = story.combat.initiativeOrder.findIndex(e => e.characterId === params.characterId) + 1;
+    return {
+      name:       char.name,
+      initiative,
+      position:   newPosition,
+      message:    `${char.name} joins combat! Initiative ${initiative}, position ${newPosition} in the order.`,
+    };
+  },
+
+  /**
    * Override a combatant's initiative value and re-sort the full order.
    * Useful for: surprise rounds, readied actions, special class features,
    * or DM adjustment. The turn pointer is updated to still reference the
@@ -1544,10 +1698,15 @@ export function formatToolResultsForRePrompt(toolResults) {
       }
       case 'create_item':
         return `✅ create_item: Item "${result.item?.name}" created. itemId="${result.itemId}" — use this exact ID in your next add_item call`;
-      case 'introduce_npc':
-        return result.reused
+      case 'introduce_npc': {
+        let introLine = result.reused
           ? `✅ introduce_npc: Existing character "${result.npc?.name}" reused (no duplicate). npcId="${result.npcId}" — use this ID in npc_speak calls`
           : `✅ introduce_npc: NPC "${result.npc?.name}" created. npcId="${result.npcId}" — use this ID in npc_speak calls`;
+        if (result.autoJoinedCombat) {
+          introLine += `\n⚔️ AUTO-JOINED COMBAT: ${result.npc?.name} rolled initiative ${result.initiative} and is now in the initiative order. Call get_combat_state to see the updated order. No need to call add_to_combat.`;
+        }
+        return introLine;
+      }
       case 'remove_npc_from_scene':
         return `✅ remove_npc_from_scene: "${result.npcName}" removed from current scene (still a known character for future scenes)`;
       case 'modify_hp': {
@@ -1640,7 +1799,15 @@ export function formatToolResultsForRePrompt(toolResults) {
         const order = (result.initiativeOrder || [])
           .map(e => `${e.position}. ${e.name} (Init:${e.initiative})${e.isCurrent ? ' ◄' : ''}`)
           .join(', ');
-        return `⚔️ enter_combat: COMBAT STARTED — Round 1 | Initiative: ${order} | First to act: ${result.currentTurn}`;
+        const npcCount = (result.initiativeOrder || []).filter(e => e.isNPC).length;
+        let combatLine = `⚔️ enter_combat: COMBAT STARTED — Round 1 | Initiative: ${order} | First to act: ${result.currentTurn}`;
+        if (result.autoAddedEnemies?.length > 0) {
+          combatLine += `\nℹ️ Auto-added from current scene: ${result.autoAddedEnemies.join(', ')}`;
+        }
+        if (npcCount === 0) {
+          combatLine += `\n⚠️ CRITICAL WARNING: No enemy NPCs are in the initiative order! Only player characters are in combat. If enemies should be present, call add_to_combat with their characterId to add them now. Never run combat with only PCs in the order.`;
+        }
+        return combatLine;
       }
       case 'end_combat':
         return `✅ end_combat: ${result.message}`;
@@ -1658,6 +1825,8 @@ export function formatToolResultsForRePrompt(toolResults) {
         return `✅ use_movement: ${result.name} moved ${result.feetUsed}ft (${result.movementRemaining}ft remaining of ${result.movementMax}ft)`;
       case 'action_surge':
         return `⚡ action_surge: ${result.message}`;
+      case 'add_to_combat':
+        return `⚔️ add_to_combat: ${result.message}`;
       case 'remove_from_combat':
         return `🚪 remove_from_combat: ${result.removed} removed from combat${result.suggestion ? ` — ${result.suggestion}` : ''}`;
       case 'set_initiative':
@@ -1864,10 +2033,17 @@ export function toolResultSummary(tool, params, result) {
     case 'get_quests':
       return '';
     // ── COMBAT badges ─────────────────────────────────────────
-    case 'enter_combat':
-      return `⚔️ Combat begins! Round 1 — ${result.initiativeOrder?.length || 0} combatants`;
+    case 'enter_combat': {
+      const total    = result.initiativeOrder?.length || 0;
+      const npcCount = result.initiativeOrder?.filter(e => e.isNPC).length || 0;
+      const autoNote = result.autoAddedEnemies?.length > 0 ? ` (incl. ${result.autoAddedEnemies.join(', ')})` : '';
+      const warnNote = npcCount === 0 ? ' ⚠️ no enemies!' : '';
+      return `⚔️ Combat begins! Round 1 — ${total} combatants${autoNote}${warnNote}`;
+    }
     case 'end_combat':
       return `🏁 Combat ended`;
+    case 'add_to_combat':
+      return `⚔️ ${result.name} joins combat (initiative ${result.initiative})`;
     case 'next_turn':
       return result.newRound
         ? `🔔 Round ${result.round} begins — ${result.currentTurn}'s turn`

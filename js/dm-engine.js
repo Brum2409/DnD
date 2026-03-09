@@ -122,7 +122,14 @@ export function buildDMSystemPrompt(story, characters) {
       const marker   = isCurr ? ' ◄ ACTIVE TURN' : '';
       return `  ${i + 1}. Init:${e.initiative} | ${e.name} | ID:${e.characterId} | HP:${hp}/${maxHp} | AC:${ac}${condStr}${economy}${alive}${marker}`;
     }).join('\n');
-    combatQuickRef = `\n\n== ⚔ COMBAT ACTIVE — Round ${combat.round} ==\nCurrent Turn: ${combat.initiativeOrder[combat.currentTurnIndex]?.name || '?'} (index ${combat.currentTurnIndex})\nInitiative Order:\n${orderLines}\n\nCOMBAT REMINDERS:\n• Call use_action / use_bonus_action / use_movement BEFORE narrating what the combatant does\n• Call next_turn AFTER the current combatant fully resolves their turn\n• Dead NPCs are already removed by modify_hp — call end_combat when all enemies are down`;
+
+    const npcCount = combat.initiativeOrder.filter(e => e.isNPC && e.isAlive).length;
+    const pcCount  = combat.initiativeOrder.filter(e => !e.isNPC && e.isAlive).length;
+    const missingEnemyWarning = npcCount === 0
+      ? `\n⚠️ ALERT: No living enemies in initiative order! If enemies are present in the scene but missing from this list, call add_to_combat with their characterId IMMEDIATELY.`
+      : '';
+
+    combatQuickRef = `\n\n== ⚔ COMBAT ACTIVE — Round ${combat.round} ==\nCurrent Turn: ${combat.initiativeOrder[combat.currentTurnIndex]?.name || '?'} (index ${combat.currentTurnIndex})\nAlive: ${pcCount} PC(s), ${npcCount} enemy/NPC(s)\nInitiative Order:\n${orderLines}\n\n⚠️ HP/AC VALUES ABOVE ARE THE SINGLE SOURCE OF TRUTH — always quote these exact numbers. NEVER estimate, remember, or invent HP values from prior narration.\n⚠️ WHOSE TURN IT IS = index ${combat.currentTurnIndex} in the list above (${combat.initiativeOrder[combat.currentTurnIndex]?.name || '?'}). Do not guess from context.\n${missingEnemyWarning}\nCOMBAT REMINDERS:\n• Call use_action / use_bonus_action / use_movement BEFORE narrating what the combatant does\n• Call next_turn AFTER the current combatant fully resolves their turn\n• If an enemy is in the scene but NOT in the initiative order, call add_to_combat immediately\n• Dead NPCs are already removed by modify_hp — call end_combat when all enemies are down`;
   }
 
   // ── Tool documentation ─────────────────────────────────────
@@ -211,6 +218,9 @@ EXAMPLE — fetching context:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 COMBAT (mandatory when story.combat is active OR when a fight starts):
 • Combat breaks out (any side attacks another)          → enter_combat with ALL participating NPC IDs
+  — Scene enemies are auto-added, but always pass npcIds explicitly for clarity
+• Enemy/NPC introduced while combat is already active   → they auto-join initiative; verify with get_combat_state
+• Enemy present in scene but NOT in initiative order    → add_to_combat with their characterId IMMEDIATELY
 • Current combatant uses their Action                   → use_action BEFORE narrating the outcome
 • Current combatant uses their Bonus Action             → use_bonus_action BEFORE narrating
 • Any combatant uses their Reaction off-turn            → use_reaction on the reacting combatant
@@ -422,6 +432,18 @@ COMBAT TOOLS:
   Starts combat. Auto-rolls initiative (1d20+DEX) for every PC in the party + all listed NPCs.
   Call the INSTANT combat breaks out (first attack, surprise, ambush). List every participating NPC ID.
   Optional: "initiativeOverrides":{"charId":20} to set a specific initiative without rolling.
+  ✓ AUTO-INCLUDE: Any enemy/boss/creature NPCs already in the current scene are automatically
+    added even if you omit their IDs — but you should still list them explicitly for clarity.
+
+- add_to_combat:
+  {"tool":"add_to_combat","storyId":"${story.id}","characterId":"<id>"}
+  {"tool":"add_to_combat","storyId":"${story.id}","characterId":"<id>","initiative":14}
+  Add a character or NPC to an ALREADY ACTIVE combat encounter.
+  Use when: (1) an enemy joins mid-fight (reinforcements, ambush from stealth),
+            (2) you called enter_combat but forgot to include an NPC,
+            (3) an NPC was introduced AFTER combat started and isn't in the order.
+  Rolls initiative automatically unless you pass an override.
+  ⚠️ If introduce_npc is called while combat is active, the NPC auto-joins — no need to call this.
 
 - end_combat:
   {"tool":"end_combat","storyId":"${story.id}"}
@@ -475,8 +497,11 @@ COMBAT TOOLS:
 
 RUNNING COMBAT — THE SEQUENCE:
   Step 1.  DM narrates the trigger (enemy charges, player is surprised, etc.)
-  Step 2.  DM calls enter_combat with all participating NPC IDs. System rolls initiative.
+  Step 2.  Call introduce_npc for any new enemies FIRST (to get their npcId), THEN call
+           enter_combat with those npcIds. If combat is already active, introduce_npc auto-
+           joins the NPC to the initiative order — call get_combat_state to confirm the order.
   Step 3.  DM announces the initiative order and describes the opening moments.
+           ⚠️ Always read HP/AC from the COMBAT STATE block — never use your own memory.
   Step 4.  For each combatant's turn in order:
       a. Announce who is acting ("It's [Name]'s turn, initiative 14.")
       b. ⚠️ PC TURN — MANDATORY STOP: If the active combatant is a player character,
@@ -508,6 +533,11 @@ CRITICAL RULES — NEVER VIOLATE:
     STOP immediately — do not call use_action, roll_dice for their attack, or narrate
     what they do. Write a brief combat status summary (HP, round, who is active) and
     ask the player to declare their action. Wait for their reply before doing anything.
+  ✗ NEVER state HP values from memory — always read from the COMBAT ACTIVE block above.
+    HP only changes through modify_hp. Your narration must match the system exactly.
+  ✗ NEVER state "it's [X]'s turn" unless the COMBAT ACTIVE block shows ◄ ACTIVE TURN by their name.
+  ✗ NEVER call use_action / use_bonus_action / use_movement for a combatant not in the order.
+    If an NPC is in the scene but missing from the initiative order, call add_to_combat first.
   ✓ Reactions can trigger on ANY combatant's turn, including enemy turns.
   ✓ A downed PC (0 HP) still has a "turn" — call roll_death_save at the start of it.
   ✓ If the current combatant is dead (modify_hp brought them to 0), call next_turn
@@ -651,7 +681,7 @@ ${lengthRule}
 16. Proactively call compress_history when the conversation gets very long (> 40 messages) to keep your context sharp. The 8 most recent messages are always preserved verbatim — compression only removes older messages.
 17. YOU control the world. Player messages are declarations of INTENT, never declarations of OUTCOME. Always use dice for anything uncertain, and always narrate the actual result — even if it contradicts what the player expected.
 18. QUESTS: When an NPC gives the party a mission or a clear goal emerges, call create_quest with specific, achievable objectives. Track progress with update_quest_objective as goals are accomplished. Close quests with complete_quest before awarding XP or gold rewards.
-19. COMBAT: Use enter_combat the instant a fight starts. Run turns strictly in initiative order using next_turn. Always call use_action / use_bonus_action / use_movement before narrating outcomes. Never grant a bonus action unless a class feature or spell explicitly allows it. End every fight with end_combat, then award XP and log events.
+19. COMBAT: Use enter_combat the instant a fight starts. Introduce new enemies with introduce_npc BEFORE enter_combat so you have their IDs. If an enemy joins mid-fight or was forgotten from enter_combat, call add_to_combat immediately. Run turns strictly in initiative order using next_turn. Always call use_action / use_bonus_action / use_movement before narrating outcomes. Read all HP values from the combat state block — never narrate HP from memory. Never grant a bonus action unless a class feature or spell explicitly allows it. End every fight with end_combat, then award XP and log events.
 20. ONE BEAT PER RESPONSE — NEVER self-progress: Each response must present exactly ONE completed situation and then stop. After setting a scene, describing the aftermath of combat, or introducing a new location — STOP and ask the player what they do next. Do NOT automatically chain into the next encounter, NPC appearance, or scene transition without player input. The player must always drive what happens next.${pacingRule}
 
 == TONE ==
@@ -830,6 +860,10 @@ function buildToolCallStatusMessage(toolCalls) {
       case 'action_surge': {
         const ch = getCharacter(tc.characterId);
         return `💥 ${ch?.name || 'Fighter'} uses Action Surge!`;
+      }
+      case 'add_to_combat': {
+        const ch = getCharacter(tc.characterId);
+        return `⚔️ Adding ${ch?.name || 'combatant'} to combat`;
       }
       case 'remove_from_combat': {
         const ch = getCharacter(tc.characterId);

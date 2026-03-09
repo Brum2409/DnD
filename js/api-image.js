@@ -70,7 +70,9 @@ export async function generateImage(prompt, width = 512, height = 512, seed = nu
   if (model === 'pollinations') {
     const encoded = encodeURIComponent(prompt);
     const s       = seed ?? Date.now();
-    return `${POLLINATIONS_BASE}/${encoded}?width=${width}&height=${height}&seed=${s}&model=flux`;
+    // nologo=true  — removes the Pollinations watermark overlay
+    // enhance=false — skips Pollinations' own prompt-enhancement AI call (faster + deterministic)
+    return `${POLLINATIONS_BASE}/${encoded}?width=${width}&height=${height}&seed=${s}&model=flux&nologo=true&enhance=false`;
   }
 
   if (model.startsWith('hf-')) {
@@ -183,16 +185,38 @@ async function _generateHFImage(prompt, width, height, modelId) {
  */
 export async function generateIconBase64(prompt, size = 128) {
   const fullPrompt = `${prompt}, game item icon, fantasy art, dark background, detailed illustration, centered composition, full subject visible and centered`;
-  const result     = await generateImage(fullPrompt, size, size);
 
-  // Imagen returns a data URL directly — no extra fetch needed
-  if (result.startsWith('data:')) return result;
+  // Try up to 2 times — the second attempt uses a different seed to get a fresh
+  // Pollinations backend rather than hitting the same (possibly overloaded) server.
+  const MAX_ATTEMPTS = 2;
+  const TIMEOUT_MS   = 28_000; // 28 s — generous but not infinite
 
-  // Pollinations returns a URL — fetch and convert to base64
-  const response = await fetch(result);
-  if (!response.ok) throw new Error(`Image fetch failed: HTTP ${response.status}`);
-  const blob = await response.blob();
-  return blobToBase64(blob);
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    // On retry, vary the seed so Pollinations routes to a different backend
+    const seed   = attempt === 0 ? null : Date.now() + Math.trunc(Math.random() * 9999);
+    const result = await generateImage(fullPrompt, size, size, seed);
+
+    // Imagen / HF return a data URL directly — no extra fetch needed
+    if (result.startsWith('data:')) return result;
+
+    // Pollinations returns a URL — fetch and convert to base64 with a hard timeout
+    const controller = new AbortController();
+    const timer      = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    try {
+      const response = await fetch(result, { signal: controller.signal });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const blob = await response.blob();
+      return await blobToBase64(blob);
+    } catch (err) {
+      if (attempt < MAX_ATTEMPTS - 1) {
+        console.warn(`[api-image] generateIconBase64 attempt ${attempt + 1} failed (${err.message}), retrying…`);
+        continue;
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
 }
 
 /**

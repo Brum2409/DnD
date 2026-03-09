@@ -32,14 +32,30 @@
 
 import * as db from './db.js';
 import { geminiGenerate } from './api-gemini.js';
-import { generateIconBase64 } from './api-image.js';
+import { generateIconBase64, generateImage, getImageModel } from './api-image.js';
 import { uuid, getBaseSpellSlots } from './utils.js';
 
-// ── NPC portrait generator (async, updates NPC after creation) ─
+// ── NPC portrait generator ────────────────────────────────────
+//
+// For Pollinations the portrait URL is computed synchronously (pure string
+// construction) so npc.portrait is set before introduce_npc returns — meaning
+// the very first npc_speak call will already have a portrait.
+//
+// For Imagen / HuggingFace the image must be fetched from an API, so we kick
+// off an async background task that writes the base-64 result back to the DB
+// once it completes.
 
-async function generateNPCPortraitAsync(npcId, prompt) {
+/** Build a Pollinations portrait URL from a prompt — instant, no network call. */
+function _pollinationsPortraitUrl(prompt, size = 256) {
+  const encoded = encodeURIComponent(prompt);
+  const seed    = Date.now();
+  return `https://image.pollinations.ai/prompt/${encoded}?width=${size}&height=${size}&seed=${seed}&model=flux&nologo=true&enhance=false`;
+}
+
+/** For Imagen / HF: fetch portrait and persist base-64 back to the NPC record. */
+async function _generateNPCPortraitImagenAsync(npcId, prompt, size = 256) {
   try {
-    const portrait = await generateIconBase64(prompt);
+    const portrait = await generateImage(prompt, size, size);
     const npc = db.getCharacter(npcId);
     if (npc && portrait) {
       npc.portrait = portrait;
@@ -331,7 +347,7 @@ export const DM_TOOLS = {
     // and restore their isAlive flag in any active combat initiative order.
     if (!isDead && !char.isNPC && char.deathSaves) {
       char.deathSaves = null;
-      char.conditions = char.conditions.filter(c => c !== 'Unconscious' && c !== 'Stable');
+      char.conditions = char.conditions.filter(c => c !== 'Unconscious' && c !== 'Stable' && c !== 'Dead');
       db.saveCharacter(char);
 
       // Restore isAlive in initiative order so they can take turns again
@@ -563,6 +579,7 @@ export const DM_TOOLS = {
       imagePrompt:  params.newSceneDescription || '',
       imageUrl:     '',
       npcs:         [],
+      deadNpcs:     [],
       loot:         [],
       completedAt:  null,
     };
@@ -722,8 +739,17 @@ export const DM_TOOLS = {
       }
     }
 
-    const portraitPrompt = `${name}, ${race} ${role}, DND fantasy character portrait, ${appearance || 'dramatic lighting'}, detailed face, dark fantasy art, circular portrait, subject centered`;
-    generateNPCPortraitAsync(npc.id, portraitPrompt);
+    const portraitPrompt = `${name}, ${race} ${role}, DND fantasy character portrait, ${appearance || 'dramatic lighting'}, detailed face, dark fantasy art, circular portrait frame, subject centered`;
+
+    if (getImageModel() === 'pollinations') {
+      // URL construction is synchronous — portrait is ready before we return,
+      // so the very first npc_speak call will already show the portrait.
+      npc.portrait = _pollinationsPortraitUrl(portraitPrompt);
+      db.saveCharacter(npc);
+    } else {
+      // Imagen / HF require a real API call — run in the background.
+      _generateNPCPortraitImagenAsync(npc.id, portraitPrompt);
+    }
 
     // Auto-join active combat if this NPC is a combat-relevant role
     const combatRoles = ['enemy', 'boss', 'creature'];

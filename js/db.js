@@ -200,6 +200,8 @@ function apiPut(path, body) {
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+  }).then(resp => {
+    if (!resp.ok) console.error(`[db] PUT ${path} failed: HTTP ${resp.status}`);
   }).catch(err => console.error(`[db] PUT ${path} failed:`, err));
 }
 
@@ -207,6 +209,8 @@ function apiDelete(path) {
   fetch(path, {
     method: 'DELETE',
     credentials: 'include',
+  }).then(resp => {
+    if (!resp.ok) console.error(`[db] DELETE ${path} failed: HTTP ${resp.status}`);
   }).catch(err => console.error(`[db] DELETE ${path} failed:`, err));
 }
 
@@ -238,6 +242,7 @@ export function saveCharacter(char) {
   if (idx >= 0) {
     cache.characters[idx] = char;
   } else {
+    if (!char.createdAt) char.createdAt = char.updatedAt;
     cache.characters.push(char);
   }
   apiPut(`/api/characters/${char.id}`, char);

@@ -1408,7 +1408,7 @@ function renderCharPanel() {
       <div class="char-mini-card" data-char-id="${ch.id}" title="Click to view full sheet">
         <div class="char-mini-top">
           <div class="char-mini-portrait">
-            ${ch.portrait ? `<img src="${ch.portrait}" alt="" />` : '🧙'}
+            ${ch.portrait ? `<img src="${escHtml(ch.portrait)}" alt="" />` : '🧙'}
           </div>
           <div class="char-mini-info">
             <div class="char-mini-name">${escHtml(ch.name)}</div>
@@ -1483,7 +1483,7 @@ function buildNpcCardHtml(npc) {
     <div class="char-mini-card npc-card" data-char-id="${npc.id}" title="${escHtml(npc.personality || 'Click for details')}">
       <div class="char-mini-top">
         <div class="char-mini-portrait" style="border:1px solid rgba(120,80,180,0.4);">
-          ${npc.portrait ? `<img src="${npc.portrait}" alt="" />` : '🎭'}
+          ${npc.portrait ? `<img src="${escHtml(npc.portrait)}" alt="" />` : '🎭'}
         </div>
         <div class="char-mini-info">
           <div class="char-mini-name">${escHtml(npc.name)}</div>
@@ -1554,7 +1554,7 @@ function renderKnownCharsPanel(sceneNpcIds) {
         <div class="char-mini-card npc-card" data-char-id="${npc.id}" title="${escHtml(npc.personality || 'Click for details')}" style="opacity:0.7;">
           <div class="char-mini-top">
             <div class="char-mini-portrait" style="border:1px solid rgba(120,80,180,0.2);">
-              ${npc.portrait ? `<img src="${npc.portrait}" alt="" />` : '🎭'}
+              ${npc.portrait ? `<img src="${escHtml(npc.portrait)}" alt="" />` : '🎭'}
             </div>
             <div class="char-mini-info">
               <div class="char-mini-name">${escHtml(npc.name)}</div>
@@ -1831,7 +1831,7 @@ function appendMessageEl(role, content, meta) {
   } else if (role === 'npc') {
     el.className = 'msg-npc';
     const portraitHtml = meta?.portrait
-      ? `<img src="${meta.portrait}" alt="" />`
+      ? `<img src="${escHtml(meta.portrait)}" alt="" />`
       : '🎭';
     const roleLabel = meta?.npcRole ? `<span class="msg-npc-role">(${escHtml(meta.npcRole)})</span>` : '';
     el.innerHTML = `
@@ -2187,7 +2187,7 @@ function buildSlideoverSpellSection(char) {
       const spells = byLevel[lvl].map(sp => {
         const schoolColor = SCHOOL_COLORS[sp.school] || '#888';
         const icon = sp.iconBase64
-          ? `<img src="${sp.iconBase64}" style="width:22px;height:22px;border-radius:3px;object-fit:cover;flex-shrink:0;" />`
+          ? `<img src="${escHtml(sp.iconBase64)}" style="width:22px;height:22px;border-radius:3px;object-fit:cover;flex-shrink:0;" />`
           : `<span style="width:22px;height:22px;border-radius:3px;background:${schoolColor}22;display:inline-flex;align-items:center;justify-content:center;font-size:0.9rem;flex-shrink:0;">✨</span>`;
         const detailParts = [sp.castingTime, sp.range, sp.duration].filter(Boolean).join(' · ');
         const dmgStr = sp.damage ? ` <span style="color:${schoolColor};font-weight:600;">${escHtml(sp.damage)} ${escHtml(sp.damageType || '')}</span>` : '';
@@ -2242,7 +2242,7 @@ function openSlideover(charId) {
   const invHtml = char.inventory.map(inst => {
     const item = getItem(inst.itemId);
     const icon = item?.iconBase64
-      ? `<img src="${item.iconBase64}" style="width:24px;height:24px;border-radius:3px;vertical-align:middle;" />`
+      ? `<img src="${escHtml(item.iconBase64)}" style="width:24px;height:24px;border-radius:3px;vertical-align:middle;" />`
       : '⚔️';
     const name = item ? escHtml(item.name) : `<span style="color:var(--color-text-faint);font-style:italic;">Loading…</span>`;
     return `<div style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid var(--color-border);">
@@ -2262,7 +2262,7 @@ function openSlideover(charId) {
     <!-- Portrait hero header -->
     <div style="position:relative;margin:-1.5rem -1.5rem 1.5rem;overflow:hidden;border-radius:0 0 var(--radius-lg) var(--radius-lg);">
       ${char.portrait ? `
-        <img src="${char.portrait}" style="width:100%;height:200px;object-fit:cover;object-position:top;display:block;" />
+        <img src="${escHtml(char.portrait)}" style="width:100%;height:200px;object-fit:cover;object-position:top;display:block;" />
         <div style="position:absolute;inset:0;background:linear-gradient(to top,rgba(10,10,14,1) 0%,rgba(10,10,14,0.5) 50%,transparent 100%);"></div>
       ` : `
         <div style="width:100%;height:140px;display:flex;align-items:center;justify-content:center;font-size:4rem;background:linear-gradient(135deg,rgba(201,168,76,0.06),rgba(0,0,0,0.4));opacity:0.5;">🧙</div>
@@ -2270,7 +2270,7 @@ function openSlideover(charId) {
       `}
       <div style="position:absolute;bottom:0;left:0;right:0;padding:1.25rem 1.25rem 1rem;display:flex;align-items:flex-end;gap:1rem;">
         <div style="width:72px;height:72px;border-radius:50%;overflow:hidden;flex-shrink:0;border:3px solid ${ringColor};box-shadow:0 0 20px ${glowColor};background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;font-size:2rem;">
-          ${char.portrait ? `<img src="${char.portrait}" style="width:100%;height:100%;object-fit:cover;" />` : (isNPC ? '🎭' : '🧙')}
+          ${char.portrait ? `<img src="${escHtml(char.portrait)}" style="width:100%;height:100%;object-fit:cover;" />` : (isNPC ? '🎭' : '🧙')}
         </div>
         <div>
           <h2 style="font-family:var(--font-display);font-size:1.2rem;color:${isNPC ? 'rgba(200,160,240,0.95)' : 'var(--color-primary)'};text-shadow:0 2px 8px rgba(0,0,0,0.8);">${escHtml(char.name)}</h2>

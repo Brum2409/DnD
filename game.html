@@ -807,6 +807,15 @@
       background: rgba(204, 60, 60, 0.18);
       border-color: rgba(204, 60, 60, 0.6);
     }
+    .combat-skip-btn {
+      border-color: rgba(201, 168, 76, 0.4);
+      background: rgba(201, 168, 76, 0.08);
+      color: var(--color-primary);
+    }
+    .combat-skip-btn:hover {
+      background: rgba(201, 168, 76, 0.18);
+      border-color: rgba(201, 168, 76, 0.65);
+    }
 
     /* Initiative track — horizontal scroll */
     .combat-initiative-track {
@@ -1123,6 +1132,9 @@
       <div class="combat-acting-label">
         Acting: <strong id="combat-current-name">—</strong>
       </div>
+      <button class="combat-end-btn combat-skip-btn" id="combat-skip-hint" title="Skip your turn (forfeit remaining actions)" style="display:none;">
+        ⏭ Skip Turn
+      </button>
       <button class="combat-end-btn" id="combat-end-hint" title="Tell the DM to end combat">
         🏁 End Combat
       </button>
@@ -1653,6 +1665,13 @@ function renderCombatTracker() {
 
   const currentEntry = combat.initiativeOrder[combat.currentTurnIndex];
   if (currentName) currentName.textContent = currentEntry?.name || '—';
+
+  // Show "Skip Turn" button only when it's a PC's turn (not NPC/enemy)
+  const skipBtn = document.getElementById('combat-skip-hint');
+  if (skipBtn) {
+    const isPC = currentEntry && !currentEntry.isNPC && currentEntry.isAlive;
+    skipBtn.style.display = isPC ? '' : 'none';
+  }
 
   // Build combatant cards
   const track = document.getElementById('combat-initiative-track');
@@ -2362,6 +2381,15 @@ document.getElementById('combat-end-hint')?.addEventListener('click', () => {
     input.value = 'The combat appears to be over. Please end combat and wrap up the encounter.';
     input.focus();
     // Don't auto-send — let the player review and edit if they prefer
+  }
+});
+
+// ── Combat tracker — "Skip Turn" button ───────────────────────
+// Lets the player explicitly forfeit their remaining actions and pass the turn.
+// Auto-sends so the DM immediately calls skip_turn without extra back-and-forth.
+document.getElementById('combat-skip-hint')?.addEventListener('click', () => {
+  if (!dmTyping && activeStory?.combat?.active) {
+    handleSend('I want to skip my turn and pass to the next combatant.');
   }
 });
 

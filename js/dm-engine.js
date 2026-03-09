@@ -209,11 +209,11 @@ READ (query game state, no side-effects):
   All past and current scenes with titles and completion status.
 
 WRITE (always narrate the outcome in your final turn):
-- modify_hp:        {"tool":"modify_hp","characterId":"<id>","delta":<±number>,"reason":"<why>"}
+- modify_hp:        {"tool":"modify_hp","storyId":"${storyId}","characterId":"<id>","delta":<±number>,"reason":"<why>"}
   When a PC drops to 0 HP, the result includes needsDeathSaves=true and the Unconscious condition
   is applied automatically. You MUST call roll_death_save each combat round until they stabilise or die.
 
-- roll_death_save:  {"tool":"roll_death_save","characterId":"<id>"}
+- roll_death_save:  {"tool":"roll_death_save","storyId":"${storyId}","characterId":"<id>"}
   ONLY for player characters at 0 HP. Roll at the START of each of their turns.
   Result outcomes:
     • critical_success (rolled 20): PC regains 1 HP, stands up — combat can continue

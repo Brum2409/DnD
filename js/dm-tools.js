@@ -271,13 +271,18 @@ export const DM_TOOLS = {
 
     const isDead = char.stats.hp <= 0;
 
+    // Fetch the relevant stories once — prefer the caller-supplied storyId to avoid
+    // scanning every story in the database, which is wasteful and semantically wrong.
+    const storiesToCheck = params.storyId
+      ? [db.getStory(params.storyId)].filter(Boolean)
+      : db.getAllStories();
+
     // When an NPC/enemy dies, move them from scene.npcs[] to scene.deadNpcs[].
     // They stay in deadNpcs so the DM retains context for looting, death narration,
     // and any post-combat interactions with the body.
     // Also mark them as dead in the active combat initiative order.
     if (isDead) {
-      const allStories = db.getAllStories();
-      for (const story of allStories) {
+      for (const story of storiesToCheck) {
         let storyChanged = false;
 
         // Remove dead NPC from scene npcs / add to deadNpcs
@@ -330,8 +335,7 @@ export const DM_TOOLS = {
       db.saveCharacter(char);
 
       // Restore isAlive in initiative order so they can take turns again
-      const allStories = db.getAllStories();
-      for (const story of allStories) {
+      for (const story of storiesToCheck) {
         if (story.combat?.active) {
           const combatEntry = story.combat.initiativeOrder.find(e => e.characterId === char.id);
           if (combatEntry && !combatEntry.isAlive) {
@@ -344,19 +348,16 @@ export const DM_TOOLS = {
 
     // Report alive counts when in active combat so the DM knows when to call end_combat.
     let combatAliveCounts = null;
-    {
-      const allStories = db.getAllStories();
-      for (const story of allStories) {
-        if (story.combat?.active) {
-          const inCombat = story.combat.initiativeOrder.some(e => e.characterId === char.id);
-          if (inCombat) {
-            const alive = story.combat.initiativeOrder.filter(e => e.isAlive);
-            combatAliveCounts = {
-              aliveNPCs: alive.filter(e =>  e.isNPC).length,
-              alivePCs:  alive.filter(e => !e.isNPC).length,
-            };
-            break;
-          }
+    for (const story of storiesToCheck) {
+      if (story.combat?.active) {
+        const inCombat = story.combat.initiativeOrder.some(e => e.characterId === char.id);
+        if (inCombat) {
+          const alive = story.combat.initiativeOrder.filter(e => e.isAlive);
+          combatAliveCounts = {
+            aliveNPCs: alive.filter(e =>  e.isNPC).length,
+            alivePCs:  alive.filter(e => !e.isNPC).length,
+          };
+          break;
         }
       }
     }
@@ -425,8 +426,10 @@ export const DM_TOOLS = {
         outcome = 'dead';
 
         // Mark the PC as out of the initiative order — three failures = truly dead
-        const allStories = db.getAllStories();
-        for (const story of allStories) {
+        const storiesToCheck = params.storyId
+          ? [db.getStory(params.storyId)].filter(Boolean)
+          : db.getAllStories();
+        for (const story of storiesToCheck) {
           if (story.combat?.active) {
             const combatEntry = story.combat.initiativeOrder.find(e => e.characterId === char.id);
             if (combatEntry && combatEntry.isAlive) {
@@ -1605,8 +1608,10 @@ ${transcript.slice(0, 10000)}`,
       return ((cb?.stats?.dexterity || 10) - (ca?.stats?.dexterity || 10));
     });
     // Keep currentTurnIndex pointing at the same combatant after re-sort
-    story.combat.currentTurnIndex = story.combat.initiativeOrder
-      .findIndex(e => e.characterId === currentCombatant.characterId);
+    if (currentCombatant) {
+      story.combat.currentTurnIndex = story.combat.initiativeOrder
+        .findIndex(e => e.characterId === currentCombatant.characterId);
+    }
 
     db.saveStory(story);
 
@@ -1641,8 +1646,10 @@ ${transcript.slice(0, 10000)}`,
       const cb = db.getCharacter(b.characterId);
       return ((cb?.stats?.dexterity || 10) - (ca?.stats?.dexterity || 10));
     });
-    story.combat.currentTurnIndex = story.combat.initiativeOrder
-      .findIndex(e => e.characterId === currentCombatant.characterId);
+    if (currentCombatant) {
+      story.combat.currentTurnIndex = story.combat.initiativeOrder
+        .findIndex(e => e.characterId === currentCombatant.characterId);
+    }
 
     db.saveStory(story);
     return {

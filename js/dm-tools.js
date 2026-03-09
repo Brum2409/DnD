@@ -1007,7 +1007,10 @@ export const DM_TOOLS = {
     const toCompress = conversational.slice(0, -KEEP_RECENT);
     const toKeep     = conversational.slice(-KEEP_RECENT);
 
-    // Build plain-text transcript of only the messages being compressed
+    // Build plain-text transcript of only the messages being compressed.
+    // Each message is individually capped at 600 chars; no outer slice so that
+    // all messages are included in the summary request (avoids silently dropping
+    // later messages when there are many to compress).
     const transcript = toCompress
       .map(m => `${m.role === 'user' ? 'PLAYER' : 'DM'}: ${m.content.slice(0, 600)}`)
       .join('\n\n');
@@ -1027,7 +1030,7 @@ export const DM_TOOLS = {
 Be specific with names and numbers. Write in present tense ("The party is…"). Under 700 words.
 
 CONVERSATION TRANSCRIPT:
-${transcript.slice(0, 10000)}`,
+${transcript}`,
       '',
       0.5
     ).catch(() => 'Adventure history compressed. The party has been adventuring.');
@@ -1119,13 +1122,13 @@ ${transcript.slice(0, 10000)}`,
       const char = db.getCharacter(id);
       if (!char) continue;
       // PCs at 0 HP still need death save turns; only skip NPCs (or confirmed Dead PCs)
-      if (char.stats.hp <= 0 && (char.isNPC || char.conditions?.includes('Dead'))) continue;
+      if ((char.stats?.hp ?? 0) <= 0 && (char.isNPC || char.conditions?.includes('Dead'))) continue;
 
-      const dexMod  = Math.floor(((char.stats.dexterity || 10) - 10) / 2);
+      const dexMod  = Math.floor(((char.stats?.dexterity || 10) - 10) / 2);
       const roll    = (id in overrides)
         ? Number(overrides[id])
         : Math.floor(Math.random() * 20) + 1 + dexMod;
-      const moveMax = char.stats.speed || char.movementSpeed || 30;
+      const moveMax = char.stats?.speed || char.movementSpeed || 30;
 
       entries.push({
         characterId:       id,
@@ -1224,7 +1227,7 @@ ${transcript.slice(0, 10000)}`,
     // Advance index, skipping dead/removed combatants
     let nextIdx = (combat.currentTurnIndex + 1) % total;
     let guard   = 0;
-    while (!order[nextIdx].isAlive && guard < total) {
+    while (guard < total && !order[nextIdx]?.isAlive) {
       nextIdx = (nextIdx + 1) % total;
       guard++;
     }
@@ -1326,7 +1329,7 @@ ${transcript.slice(0, 10000)}`,
     // Advance to the next living combatant
     let nextIdx = (skipIdx + 1) % total;
     let guard   = 0;
-    while (!order[nextIdx].isAlive && guard < total) {
+    while (guard < total && !order[nextIdx]?.isAlive) {
       nextIdx = (nextIdx + 1) % total;
       guard++;
     }

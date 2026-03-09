@@ -271,13 +271,18 @@ export const DM_TOOLS = {
 
     const isDead = char.stats.hp <= 0;
 
+    // Fetch the relevant stories once — prefer the caller-supplied storyId to avoid
+    // scanning every story in the database, which is wasteful and semantically wrong.
+    const storiesToCheck = params.storyId
+      ? [db.getStory(params.storyId)].filter(Boolean)
+      : db.getAllStories();
+
     // When an NPC/enemy dies, move them from scene.npcs[] to scene.deadNpcs[].
     // They stay in deadNpcs so the DM retains context for looting, death narration,
     // and any post-combat interactions with the body.
     // Also mark them as dead in the active combat initiative order.
     if (isDead) {
-      const allStories = db.getAllStories();
-      for (const story of allStories) {
+      for (const story of storiesToCheck) {
         let storyChanged = false;
 
         // Remove dead NPC from scene npcs / add to deadNpcs
@@ -330,8 +335,7 @@ export const DM_TOOLS = {
       db.saveCharacter(char);
 
       // Restore isAlive in initiative order so they can take turns again
-      const allStories = db.getAllStories();
-      for (const story of allStories) {
+      for (const story of storiesToCheck) {
         if (story.combat?.active) {
           const combatEntry = story.combat.initiativeOrder.find(e => e.characterId === char.id);
           if (combatEntry && !combatEntry.isAlive) {
@@ -344,19 +348,16 @@ export const DM_TOOLS = {
 
     // Report alive counts when in active combat so the DM knows when to call end_combat.
     let combatAliveCounts = null;
-    {
-      const allStories = db.getAllStories();
-      for (const story of allStories) {
-        if (story.combat?.active) {
-          const inCombat = story.combat.initiativeOrder.some(e => e.characterId === char.id);
-          if (inCombat) {
-            const alive = story.combat.initiativeOrder.filter(e => e.isAlive);
-            combatAliveCounts = {
-              aliveNPCs: alive.filter(e =>  e.isNPC).length,
-              alivePCs:  alive.filter(e => !e.isNPC).length,
-            };
-            break;
-          }
+    for (const story of storiesToCheck) {
+      if (story.combat?.active) {
+        const inCombat = story.combat.initiativeOrder.some(e => e.characterId === char.id);
+        if (inCombat) {
+          const alive = story.combat.initiativeOrder.filter(e => e.isAlive);
+          combatAliveCounts = {
+            aliveNPCs: alive.filter(e =>  e.isNPC).length,
+            alivePCs:  alive.filter(e => !e.isNPC).length,
+          };
+          break;
         }
       }
     }
@@ -425,8 +426,10 @@ export const DM_TOOLS = {
         outcome = 'dead';
 
         // Mark the PC as out of the initiative order — three failures = truly dead
-        const allStories = db.getAllStories();
-        for (const story of allStories) {
+        const storiesToCheck = params.storyId
+          ? [db.getStory(params.storyId)].filter(Boolean)
+          : db.getAllStories();
+        for (const story of storiesToCheck) {
           if (story.combat?.active) {
             const combatEntry = story.combat.initiativeOrder.find(e => e.characterId === char.id);
             if (combatEntry && combatEntry.isAlive) {
@@ -1004,7 +1007,10 @@ export const DM_TOOLS = {
     const toCompress = conversational.slice(0, -KEEP_RECENT);
     const toKeep     = conversational.slice(-KEEP_RECENT);
 
-    // Build plain-text transcript of only the messages being compressed
+    // Build plain-text transcript of only the messages being compressed.
+    // Each message is individually capped at 600 chars; no outer slice so that
+    // all messages are included in the summary request (avoids silently dropping
+    // later messages when there are many to compress).
     const transcript = toCompress
       .map(m => `${m.role === 'user' ? 'PLAYER' : 'DM'}: ${m.content.slice(0, 600)}`)
       .join('\n\n');
@@ -1024,7 +1030,7 @@ export const DM_TOOLS = {
 Be specific with names and numbers. Write in present tense ("The party is…"). Under 700 words.
 
 CONVERSATION TRANSCRIPT:
-${transcript.slice(0, 10000)}`,
+${transcript}`,
       '',
       0.5
     ).catch(() => 'Adventure history compressed. The party has been adventuring.');
@@ -1116,13 +1122,13 @@ ${transcript.slice(0, 10000)}`,
       const char = db.getCharacter(id);
       if (!char) continue;
       // PCs at 0 HP still need death save turns; only skip NPCs (or confirmed Dead PCs)
-      if (char.stats.hp <= 0 && (char.isNPC || char.conditions?.includes('Dead'))) continue;
+      if ((char.stats?.hp ?? 0) <= 0 && (char.isNPC || char.conditions?.includes('Dead'))) continue;
 
-      const dexMod  = Math.floor(((char.stats.dexterity || 10) - 10) / 2);
+      const dexMod  = Math.floor(((char.stats?.dexterity || 10) - 10) / 2);
       const roll    = (id in overrides)
         ? Number(overrides[id])
         : Math.floor(Math.random() * 20) + 1 + dexMod;
-      const moveMax = char.stats.speed || char.movementSpeed || 30;
+      const moveMax = char.stats?.speed || char.movementSpeed || 30;
 
       entries.push({
         characterId:       id,
@@ -1221,7 +1227,7 @@ ${transcript.slice(0, 10000)}`,
     // Advance index, skipping dead/removed combatants
     let nextIdx = (combat.currentTurnIndex + 1) % total;
     let guard   = 0;
-    while (!order[nextIdx].isAlive && guard < total) {
+    while (guard < total && !order[nextIdx]?.isAlive) {
       nextIdx = (nextIdx + 1) % total;
       guard++;
     }
@@ -1323,7 +1329,7 @@ ${transcript.slice(0, 10000)}`,
     // Advance to the next living combatant
     let nextIdx = (skipIdx + 1) % total;
     let guard   = 0;
-    while (!order[nextIdx].isAlive && guard < total) {
+    while (guard < total && !order[nextIdx]?.isAlive) {
       nextIdx = (nextIdx + 1) % total;
       guard++;
     }
@@ -1605,8 +1611,10 @@ ${transcript.slice(0, 10000)}`,
       return ((cb?.stats?.dexterity || 10) - (ca?.stats?.dexterity || 10));
     });
     // Keep currentTurnIndex pointing at the same combatant after re-sort
-    story.combat.currentTurnIndex = story.combat.initiativeOrder
-      .findIndex(e => e.characterId === currentCombatant.characterId);
+    if (currentCombatant) {
+      story.combat.currentTurnIndex = story.combat.initiativeOrder
+        .findIndex(e => e.characterId === currentCombatant.characterId);
+    }
 
     db.saveStory(story);
 
@@ -1641,8 +1649,10 @@ ${transcript.slice(0, 10000)}`,
       const cb = db.getCharacter(b.characterId);
       return ((cb?.stats?.dexterity || 10) - (ca?.stats?.dexterity || 10));
     });
-    story.combat.currentTurnIndex = story.combat.initiativeOrder
-      .findIndex(e => e.characterId === currentCombatant.characterId);
+    if (currentCombatant) {
+      story.combat.currentTurnIndex = story.combat.initiativeOrder
+        .findIndex(e => e.characterId === currentCombatant.characterId);
+    }
 
     db.saveStory(story);
     return {

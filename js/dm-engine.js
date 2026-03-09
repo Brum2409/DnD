@@ -117,7 +117,8 @@ function buildMandatorySection(storyId, isCombatActive, hasSpellcasters) {
   const combatMandatory = isCombatActive ? `COMBAT (mandatory while story.combat is active):
 • Combat breaks out (any side attacks another)          → enter_combat with ALL participating NPC IDs
   — Scene enemies are auto-added, but always pass npcIds explicitly for clarity
-• Enemy/NPC introduced while combat is already active   → they auto-join initiative; verify with get_combat_state
+• Enemy/creature/boss introduced while combat is active → auto-joins initiative; verify with get_combat_state
+  (ally/merchant/neutral do NOT auto-join — call add_to_combat explicitly if needed)
 • Enemy present in scene but NOT in initiative order    → add_to_combat with their characterId IMMEDIATELY
 • Current combatant uses their Action                   → use_action BEFORE narrating the outcome
 • Current combatant uses their Bonus Action             → use_bonus_action BEFORE narrating
@@ -127,6 +128,7 @@ function buildMandatorySection(storyId, isCombatActive, hasSpellcasters) {
 • A combatant permanently leaves the fight alive        → remove_from_combat (NOT for death)
 • All enemies are defeated / combat ends any way        → end_combat
 • Current combatant used ALL actions (ACT=✗ BON=✗ +ACT=✗) → next_turn (MANDATORY — every turn)
+  ↳ If next_turn returns "No alive combatants remain" → call end_combat immediately instead
 • Player/DM explicitly says "skip turn", "pass", "end turn" → skip_turn (forfeits remaining actions)
 • A PC is at 0 HP and it is their turn in initiative    → roll_death_save at START of their turn
 • PC at 0 HP takes damage while unconscious             → automatic death save failure (no roll needed)
@@ -247,9 +249,11 @@ NPC / WORLD CHARACTER:
 - introduce_npc:
   {"tool":"introduce_npc","storyId":"${storyId}","name":"<name>","role":"enemy|merchant|ally|neutral|boss|creature","race":"<race>","personality":"<1-2 sentences>","appearance":"<1-2 sentences>","hp":<number>,"ac":<number>}
   → Returns npcId. Use in npc_speak immediately after.
-  ⚠️ UNIQUE characters (role=ally/merchant/neutral/boss): ONLY call once per story.
-     If the character is already in CHARACTERS IN CURRENT SCENE or KNOWN CHARACTERS,
-     skip this tool and use npc_speak with their existing ID directly.
+  ⚠️ UNIQUE characters (role=ally/merchant/neutral/boss): if the character ALREADY EXISTS
+     in this story (same name), the system re-adds them to the current scene and returns
+     their existing ID with reused:true — no duplicate is created. This is intentional;
+     just use the returned npcId normally. Do NOT call introduce_npc again if they're
+     already listed in CHARACTERS IN CURRENT SCENE or KNOWN CHARACTERS — use their ID directly.
   ✓ GENERIC ENEMIES/CREATURES (role=enemy/creature): You MAY call this multiple times
      to create separate instances — e.g. call it 3 times for 3 Goblins, 2 times for
      2 Zombies. Each call creates a distinct combatant with its own HP/ID.
@@ -312,7 +316,11 @@ function buildMagicSection(storyId) {
 • Cantrips (level 0): unlimited, no slot required — never call use_spell_slot for them.
 • Upcasting: a spell can be cast using a HIGHER level slot for greater effect.
 • Spell save DC: 8 + proficiency + spellcasting modifier (INT for Wizard, WIS for Cleric/Druid, CHA for Sorcerer/Bard/Warlock/Paladin).
-• Concentration: only ONE concentration spell at a time. New one breaks the old.`;
+• Concentration: only ONE concentration spell at a time. New one breaks the old.
+  ⚠️ Concentration is tracked MANUALLY — no tool enforces it. When a character casts a
+  second concentration spell, narrate that the first spell immediately ends. If the
+  concentrating character takes damage, they must make a CON saving throw (DC = 10 or
+  half damage, whichever is higher) — use roll_dice for this check.`;
 }
 
 /** Full combat system docs — only inject when combat is active */
@@ -359,7 +367,8 @@ COMBAT TOOLS:
             (2) you called enter_combat but forgot to include an NPC,
             (3) an NPC was introduced AFTER combat started and isn't in the order.
   Rolls initiative automatically unless you pass an override.
-  ⚠️ If introduce_npc is called while combat is active, the NPC auto-joins — no need to call this.
+  ⚠️ introduce_npc with role=enemy/boss/creature auto-joins combat — no need to call add_to_combat.
+     Ally/merchant/neutral NPCs do NOT auto-join; call add_to_combat explicitly if they must fight.
 
 - end_combat:
   {"tool":"end_combat","storyId":"${storyId}"}
@@ -369,7 +378,9 @@ COMBAT TOOLS:
 - next_turn:
   {"tool":"next_turn","storyId":"${storyId}"}
   Advances to the next combatant in initiative order. Resets their Action, Bonus Action,
-  and movement. Increments the round counter and restores all Reactions when the order wraps.
+  and movement. When the initiative order cycles back past the first combatant (everyone has
+  had their turn), the round counter increments and all Reactions are restored for every
+  living combatant. The result includes newRound:true when this happens.
   ⚠️ Only call next_turn when the current combatant has genuinely exhausted their turns —
   i.e., hasAction=false AND hasExtraAction=false AND hasBonusAction=false (or there is
   truly nothing useful left for them to do). If actions remain and the combatant wants
@@ -428,8 +439,8 @@ COMBAT TOOLS:
 RUNNING COMBAT — THE SEQUENCE:
   Step 1.  DM narrates the trigger (enemy charges, player is surprised, etc.)
   Step 2.  Call introduce_npc for any new enemies FIRST (to get their npcId), THEN call
-           enter_combat with those npcIds. If combat is already active, introduce_npc auto-
-           joins the NPC to the initiative order — call get_combat_state to confirm the order.
+           enter_combat with those npcIds. If combat is already active, enemy/boss/creature
+           NPCs auto-join the initiative order — call get_combat_state to confirm the order.
   Step 3.  DM announces the initiative order and describes the opening moments.
            ⚠️ Always read HP/AC from the COMBAT STATE block — never use your own memory.
   Step 4.  For each combatant's turn in order:
@@ -470,8 +481,10 @@ CRITICAL RULES — NEVER VIOLATE:
     STOP immediately — do not call use_action, roll_dice for their attack, or narrate
     what they do. Write a brief combat status summary (HP, round, who is active) and
     ask the player to declare their action. Wait for their reply before doing anything.
-  ✗ NEVER state HP values from memory — always read from the COMBAT ACTIVE block above.
-    HP only changes through modify_hp. Your narration must match the system exactly.
+  ✗ NEVER state exact HP numbers from memory during combat — always read from the COMBAT ACTIVE
+    block above. HP only changes through modify_hp; your narration must match those numbers exactly.
+    ✓ Outside active combat you may use narrative judgment ("the ogre looks badly wounded") without
+    quoting exact numbers, but any actual HP change still requires modify_hp.
   ✗ NEVER state "it's [X]'s turn" unless the COMBAT ACTIVE block shows ◄ ACTIVE TURN by their name.
   ✗ NEVER call use_action / use_bonus_action / use_movement for a combatant not in the order.
     If an NPC is in the scene but missing from the initiative order, call add_to_combat first.
@@ -480,7 +493,9 @@ CRITICAL RULES — NEVER VIOLATE:
   ✓ Reactions can trigger on ANY combatant's turn, including enemy turns.
   ✓ A downed PC (0 HP) still has a "turn" — call roll_death_save at the start of it.
   ✓ If the current combatant is dead (modify_hp brought them to 0), call next_turn
-    immediately without giving them any actions.`;
+    immediately without giving them any actions.
+  ✓ If next_turn returns error "No alive combatants remain" — do NOT retry next_turn.
+    Call end_combat immediately (all combatants on at least one side are down).`;
 }
 
 /** Brief enter_combat trigger note — shown only when NOT in combat */

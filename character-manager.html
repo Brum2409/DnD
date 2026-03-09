@@ -412,7 +412,7 @@ const TYPE_ICON = { weapon:'⚔️', armor:'🛡️', potion:'💊', misc:'📦'
 function init() {
   const preId = new URLSearchParams(window.location.search).get('id');
   renderSidebar();
-  const chars = getAllCharacters();
+  const chars = getAllCharacters().filter(c => !c.isNPC);
   if (preId && chars.find(c => c.id === preId)) {
     selectChar(preId);
   } else if (chars.length > 0) {
@@ -424,7 +424,7 @@ function init() {
 
 // ── Sidebar ───────────────────────────────────────────────────
 function renderSidebar() {
-  const chars = getAllCharacters();
+  const chars = getAllCharacters().filter(c => !c.isNPC);
   const list  = document.getElementById('char-list');
 
   if (chars.length === 0) {
@@ -488,7 +488,7 @@ function renderSidebar() {
       showToast('Character deleted.', 'info');
       if (selectedCharId === btn.dataset.del) {
         selectedCharId = null;
-        const remaining = getAllCharacters();
+        const remaining = getAllCharacters().filter(c => !c.isNPC);
         remaining.length > 0 ? selectChar(remaining[0].id) : renderEmptyDetail();
       }
       renderSidebar();

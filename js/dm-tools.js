@@ -331,7 +331,7 @@ export const DM_TOOLS = {
     // and restore their isAlive flag in any active combat initiative order.
     if (!isDead && !char.isNPC && char.deathSaves) {
       char.deathSaves = null;
-      char.conditions = char.conditions.filter(c => c !== 'Unconscious' && c !== 'Stable');
+      char.conditions = char.conditions.filter(c => c !== 'Unconscious' && c !== 'Stable' && c !== 'Dead');
       db.saveCharacter(char);
 
       // Restore isAlive in initiative order so they can take turns again
